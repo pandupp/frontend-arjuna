@@ -59,12 +59,12 @@ export const invoices = ref([
     { 
         id: 5, 
         invoiceNumber: 'INV-2025-005', 
-        customerName: 'CV. Maju Mundur', 
-        issueDate: '2025-09-28', // <-- Minggu 4 (Piutang)
+        customerName: 'Amaik syahroni', 
+        issueDate: '2025-09-28', 
         dueDate: '2025-10-13', 
-        totalAmount: 750000, 
+        totalAmount: 1482000, 
         status: 'Tertunda',
-        items: [{ selectedItem: { name: 'Stiker Vinyl A3+'}, quantity: 50, unitPrice: 15000, total: 750000 }],
+        items: [{ selectedItem: { name: 'Spanduk Flexi 280gr'}, quantity: 98.8, unitPrice: 15000, total: 1482000 }],
         dp: 0,
     },
     // --- Data untuk "Bulan Lalu" (Agustus 2025) ---
