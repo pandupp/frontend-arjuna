@@ -65,7 +65,7 @@ export const invoices = ref([
         totalAmount: 750000, 
         status: 'Tertunda',
         items: [{ selectedItem: { name: 'Stiker Vinyl A3+'}, quantity: 50, unitPrice: 15000, total: 750000 }],
-        dp: 150000,
+        dp: 0,
     },
     // --- Data untuk "Bulan Lalu" (Agustus 2025) ---
     { 
