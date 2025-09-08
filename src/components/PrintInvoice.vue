@@ -21,7 +21,7 @@ const formatDate = (dateString) => {
   <div class="print-area bg-white font-sans text-gray-800">
     <div class="p-10">
         <div class="border rounded-lg shadow-sm">
-            <!-- Header dengan Aksen Warna -->
+            <!-- Header -->
             <div class="flex justify-between items-start p-6 bg-gray-50 rounded-t-lg border-b">
                 <div>
                     <h2 class="text-2xl font-bold tracking-wider text-gray-800">ARJUNA PRINT</h2>
@@ -34,7 +34,7 @@ const formatDate = (dateString) => {
             </div>
 
             <div class="p-6">
-                <!-- Informasi Pelanggan & Perusahaan -->
+                <!-- Info Pelanggan & Tanggal -->
                 <div class="grid grid-cols-2 gap-12 mb-8">
                     <div>
                         <p class="font-semibold text-sm text-gray-500 mb-1">DITAGIHKAN KEPADA</p>
@@ -43,9 +43,12 @@ const formatDate = (dateString) => {
                     <div class="text-right">
                         <p class="font-semibold text-sm text-gray-500 mb-1">TANGGAL TERBIT</p>
                         <p class="text-base text-gray-800">{{ formatDate(invoice.issueDate) }}</p>
-                        <!-- <p class="font-semibold text-sm text-gray-500 mb-1 mt-2"></p> -->
-                        <!-- <p class="text-base text-gray-800">{{ formatDate(invoice.dueDate) }}</p> -->
-
+                        
+                        <!-- JATUH TEMPO (KONDISIONAL) -->
+                        <div v-if="invoice.dueDateEnabled && invoice.dueDate" class="mt-3">
+                            <p class="font-semibold text-sm text-gray-500 mb-1">JATUH TEMPO</p>
+                            <p class="text-base font-bold text-red-600">{{ formatDate(invoice.dueDate) }}</p>
+                        </div>
                     </div>
                 </div>
 
@@ -71,43 +74,42 @@ const formatDate = (dateString) => {
                     </table>
                 </div>
 
-                <!-- Total & Footer -->
+                <!-- Kalkulasi Total -->
                 <div class="flex justify-end mt-8">
-                    <div class="w-2/5">
+                    <div class="w-full max-w-sm sm:w-2/5">
                         <div class="space-y-2">
-  <div class="flex justify-between items-center">
-    <span class="text-sm text-gray-600">Subtotal</span>
-    <span class="text-sm font-medium">{{ formatCurrency(invoice.totalAmount) }}</span>
-  </div>
-  <div class="flex justify-between items-center">
-    <span class="text-sm text-gray-600">Diskon</span>
-    <span class="text-sm font-medium">{{ formatCurrency(invoice.discount || 0) }}</span>
-  </div>
-  <!-- <div class="flex justify-between items-center">
-    <span class="text-sm text-gray-600">Pajak (11%)</span>
-    <span class="text-sm font-medium">{{ formatCurrency(invoice.taxAmount || 0) }}</span>
-  </div> -->
-  <div class="flex justify-between items-center">
-    <span class="text-sm text-gray-600">Uang Muka (DP)</span>
-    <span class="text-sm font-medium">{{ formatCurrency(invoice.downPayment || 0) }}</span>
-  </div>
-  <div class="flex justify-between items-center border-t pt-2 mt-2">
-    <span class="text-base font-bold text-blue-600">SISA TAGIHAN</span>
-    <span class="text-base font-bold text-blue-600">
-      {{ formatCurrency(
-        invoice.totalAmount - (invoice.discount || 0) + (invoice.taxAmount || 0) - (invoice.downPayment || 0)
-      ) }}
-    </span>
-  </div>
-</div>
-
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">Subtotal</span>
+                                <span class="text-sm font-medium">{{ formatCurrency(invoice.subtotal || 0) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">Diskon</span>
+                                <span class="text-sm font-medium">- {{ formatCurrency(invoice.discount || 0) }}</span>
+                            </div>
+                            <div v-if="invoice.taxEnabled" class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">PPN (11%)</span>
+                                <span class="text-sm font-medium">{{ formatCurrency(invoice.taxAmount || 0) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center border-t pt-2 mt-2">
+                                <span class="text-sm font-bold">Grand Total</span>
+                                <span class="text-sm font-bold">{{ formatCurrency(invoice.totalAmount || 0) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">Uang Muka (DP)</span>
+                                <span class="text-sm font-medium">- {{ formatCurrency(invoice.dp || 0) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center border-t-2 border-blue-600 pt-2 mt-2">
+                                <span class="text-base font-bold text-blue-600">SISA TAGIHAN</span>
+                                <span class="text-base font-bold text-blue-600">{{ formatCurrency(invoice.sisaTagihan || 0) }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                 <!-- Informasi Pembayaran & Catatan -->
+                <!-- Info Pembayaran & Catatan -->
                 <div class="border-t mt-8 pt-6">
                     <div class="grid grid-cols-2 gap-8">
-                         <div>
+                        <div>
                             <p class="font-semibold text-sm text-gray-500 mb-2">Informasi Pembayaran:</p>
                             <p class="text-sm"><span class="font-medium text-gray-700">Bank:</span> BCA</p>
                             <p class="text-sm"><span class="font-medium text-gray-700">No. Rekening:</span> 0322295322</p>
@@ -132,7 +134,7 @@ const formatDate = (dateString) => {
 </template>
 
 <style>
-/* CSS untuk mengatur layout cetak */
+/* ... styles remain the same ... */
 @media print {
   @page {
     size: A4;
@@ -148,13 +150,11 @@ const formatDate = (dateString) => {
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: white; /* Pastikan background putih saat print */
+    background-color: white;
   }
-  /* Sembunyikan shadow saat print */
   .print-area > div > div {
     border: none;
     box-shadow: none;
   }
 }
 </style>
-

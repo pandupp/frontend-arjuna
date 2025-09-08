@@ -14,7 +14,7 @@ defineProps({
   >
     <div class="flex justify-between items-start">
       <span class="text-sm font-medium text-gray-500">{{ title }}</span>
-      <span class="text-3xl text-gray-400" v-html="icon"></span>
+      
     </div>
     <div class="mt-4">
       <p class="text-4xl font-bold text-gray-900">{{ value }}</p>

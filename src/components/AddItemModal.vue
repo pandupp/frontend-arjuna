@@ -1,43 +1,43 @@
 <script setup>
 import { ref, watchEffect, computed } from 'vue';
 
-// Props dan Emits tetap sama
 const props = defineProps({
   isOpen: Boolean,
-  itemToEdit: Object,
+  itemData: Object,
 });
 const emit = defineEmits(['close', 'addItem', 'updateItem']);
 
-// Menambahkan 'unit' ke dalam state form
-const formData = ref({
-  code: '',
-  name: '',
-  type: '',
-  quality: '',
-  stock: 0,
-  unit: '', // <-- DITAMBAHKAN
-});
+const unitOptions = ['pcs', 'box', 'meter',];
 
-const isEditMode = computed(() => !!props.itemToEdit);
+const formData = ref({});
+
+const isEditMode = computed(() => props.itemData && props.itemData.id !== undefined);
 
 watchEffect(() => {
-  if (props.isOpen && isEditMode.value) {
-    formData.value = { ...props.itemToEdit };
-  } else {
-    // Reset form, termasuk 'unit'
-    formData.value = { code: '', name: '', type: '', quality: '', stock: 0, unit: '' };
+  if (props.isOpen) {
+    formData.value = {
+      name: '',
+      type: '',
+      quality: '', 
+      stock: 0,
+      unit: 'pcs',
+      price: 0, 
+      ...props.itemData 
+    };
   }
 });
 
 const handleSubmit = () => {
-  if (!formData.value.name || !formData.value.code) {
-    alert('Kode dan Nama barang wajib diisi!');
+  if (!formData.value.name) {
+    alert('Nama barang wajib diisi!');
     return;
   }
+  const dataToSubmit = { ...formData.value };
   if (isEditMode.value) {
-    emit('updateItem', { ...formData.value });
+    emit('updateItem', dataToSubmit);
   } else {
-    emit('addItem', { ...formData.value });
+    delete dataToSubmit.id; 
+    emit('addItem', dataToSubmit);
   }
   emit('close');
 };
@@ -57,7 +57,8 @@ const handleSubmit = () => {
             <div class="flex items-center space-x-3">
               <div class="bg-gray-100 p-2 rounded-lg">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-600">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25
+ 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
                 </svg>
               </div>
               <h3 class="text-lg font-semibold text-gray-800">{{ isEditMode ? 'Edit Item' : 'Tambah Item Baru' }}</h3>
@@ -73,7 +74,13 @@ const handleSubmit = () => {
               <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label for="code" class="block text-sm font-medium text-gray-600 mb-2">Code</label>
-                  <input v-model="formData.code" type="text" id="code" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition" required>
+                  <input 
+                    v-model="formData.code" 
+                    type="text" 
+                    id="code" 
+                    class="w-full px-4 py-2.5 bg-gray-200 border-gray-300 border rounded-lg focus:outline-none cursor-not-allowed transition" 
+                    readonly
+                  >
                 </div>
                 <div>
                   <label for="name" class="block text-sm font-medium text-gray-600 mb-2">Name</label>
@@ -81,13 +88,14 @@ const handleSubmit = () => {
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
+                 <div>
                   <label for="type" class="block text-sm font-medium text-gray-600 mb-2">Type</label>
                   <input v-model="formData.type" type="text" id="type" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
                 </div>
+                <!-- Input dikembalikan menjadi Quality -->
                 <div>
-                  <label for="quality" class="block text-sm font-medium text-gray-600 mb-2">Quality</label>
-                  <input v-model="formData.quality" type="text" id="quality" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
+                    <label for="quality" class="block text-sm font-medium text-gray-600 mb-2">Quality</label>
+                    <input v-model="formData.quality" type="text" id="quality" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
                 </div>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -96,8 +104,12 @@ const handleSubmit = () => {
                   <input v-model.number="formData.stock" type="number" id="stock" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
                 </div>
                 <div>
-                  <label for="unit" class="block text-sm font-medium text-gray-600 mb-2">Unit (pcs, meter, dll)</label>
-                  <input v-model="formData.unit" type="text" id="unit" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
+                  <label for="unit" class="block text-sm font-medium text-gray-600 mb-2">Unit</label>
+                  <select v-model="formData.unit" id="unit" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
+                    <option v-for="unit in unitOptions" :key="unit" :value="unit">
+                      {{ unit }}
+                    </option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -115,3 +127,4 @@ const handleSubmit = () => {
     </div>
   </Transition>
 </template>
+

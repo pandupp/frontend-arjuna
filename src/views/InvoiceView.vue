@@ -1,26 +1,24 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
+import { storeToRefs } from 'pinia';
+import Swal from 'sweetalert2';
 
-import { invoices, inventoryItems } from '../store.js'; 
+import { useInvoiceStore } from '../stores/invoice';
+import { useInventoryStore } from '../stores/inventory';
+
 import CreateInvoiceModal from '../components/CreateInvoiceModal.vue';
 import PrintInvoice from '../components/PrintInvoice.vue';
-import Swal from 'sweetalert2';
+
+const invoiceStore = useInvoiceStore();
+const inventoryStore = useInventoryStore();
+
+const { invoices, nextInvoiceNumber } = storeToRefs(invoiceStore);
+const { inventoryItems } = storeToRefs(inventoryStore);
 
 const isModalOpen = ref(false);
 const openMenuId = ref(null);
 const editingInvoice = ref(null);
 const invoiceToPrint = ref(null);
-
-
-
-const nextInvoiceNumber = computed(() => {
-    if (invoices.value.length === 0) return 'INV-2025-001';
-    const allIds = invoices.value.map(inv => parseInt(inv.invoiceNumber.split('-')[2]));
-    const lastNumber = Math.max(...allIds);
-    const nextNumber = lastNumber + 1;
-    const paddedNextNumber = String(nextNumber).padStart(3, '0');
-    return `INV-2025-${paddedNextNumber}`;
-});
 
 const getInvoiceStatus = (status) => {
     switch (status) {
@@ -36,6 +34,12 @@ const openAddModal = () => {
     isModalOpen.value = true;
 };
 
+const openEditModal = (invoice) => {
+    editingInvoice.value = JSON.parse(JSON.stringify(invoice));
+    isModalOpen.value = true;
+    openMenuId.value = null;
+};
+
 const deleteInvoice = (invoiceId) => {
     openMenuId.value = null;
     Swal.fire({
@@ -49,45 +53,37 @@ const deleteInvoice = (invoiceId) => {
         cancelButtonText: 'Batal'
     }).then((result) => {
         if (result.isConfirmed) {
-            invoices.value = invoices.value.filter(inv => inv.id !== invoiceId);
+            invoiceStore.deleteInvoice(invoiceId);
             Swal.fire('Dihapus!', 'Invoice telah berhasil dihapus.', 'success');
         }
     });
 };
 
 const markAsPaid = (invoiceId) => {
-    const index = invoices.value.findIndex(inv => inv.id === invoiceId);
-    if (index !== -1) {
-        invoices.value[index].status = 'Lunas';
-        invoices.value[index].dp = invoices.value[index].totalAmount;
-    }
+    invoiceStore.markInvoiceAsPaid(invoiceId);
     openMenuId.value = null;
 }
 
 const handleSaveInvoice = (newInvoiceData) => {
-    const newId = invoices.value.length ? Math.max(...invoices.value.map(inv => inv.id)) + 1 : 1;
-    invoices.value.unshift({ id: newId, ...newInvoiceData });
+    invoiceStore.addNewInvoice(newInvoiceData);
+    inventoryStore.reduceStockFromInvoice(newInvoiceData);
 };
 
 const handleUpdateInvoice = (updatedInvoice) => {
-    const index = invoices.value.findIndex(inv => inv.id === updatedInvoice.id);
-    if (index !== -1) {
-        invoices.value[index] = updatedInvoice;
-    }
+    invoiceStore.updateInvoice(updatedInvoice);
 }
 
 const printInvoice = (invoice) => {
-  invoiceToPrint.value = invoice;
-  setTimeout(() => {
-    window.print();
-    invoiceToPrint.value = null;
-  }, 100);
-  openMenuId.value = null;
+    invoiceToPrint.value = invoice;
+    setTimeout(() => {
+        window.print();
+        invoiceToPrint.value = null;
+    }, 100);
+    openMenuId.value = null;
 };
 </script>
 
 <template>
-  <!-- Template tidak berubah, hanya script yang disesuaikan -->
   <div @click="openMenuId = null">
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
       <div>
@@ -119,7 +115,7 @@ const printInvoice = (invoice) => {
               <th class="py-3 px-6 text-xs font-medium uppercase tracking-wider text-gray-500">Tgl. Terbit</th>
               <th class="py-3 px-6 text-xs font-medium uppercase tracking-wider text-gray-500">Total</th>
               <th class="py-3 px-6 text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-              <th class="py-3 px-6 text-xs font-medium uppercase tracking-wider text-gray-500 text-right">Actions</th>
+              <th class="py-3 px-6 text-xs font-medium uppercase tracking-wider text-gray-500 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody class="text-sm">
@@ -127,7 +123,7 @@ const printInvoice = (invoice) => {
               <td class="py-4 px-6 font-medium text-gray-900">{{ invoice.invoiceNumber }}</td>
               <td class="py-4 px-6 text-gray-600">{{ invoice.customerName }}</td>
               <td class="py-4 px-6 text-gray-600">{{ invoice.issueDate }}</td>
-              <td class="py-4 px-6 font-medium text-gray-900">Rp {{ invoice.totalAmount.toLocaleString('id-ID') }}</td>
+              <td class="py-4 px-6 font-medium text-gray-900">Rp {{ (invoice.totalAmount || 0).toLocaleString('id-ID') }}</td>
               <td class="py-4 px-6">
                 <span :class="getInvoiceStatus(invoice.status)" class="inline-flex items-center py-1 px-3 rounded-full text-xs font-semibold">{{ invoice.status }}</span>
               </td>
@@ -141,14 +137,17 @@ const printInvoice = (invoice) => {
                   leave-from-class="transform opacity-100 scale-100" leave-to-class="transform opacity-0 scale-95">
                   <div v-if="openMenuId === invoice.id" class="absolute right-8 top-0 mt-2 w-48 bg-white rounded-lg shadow-xl border z-10">
                     <div class="py-1">
+                      <a @click.prevent="openEditModal(invoice)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        Edit
+                      </a>
                       <a @click.prevent="printInvoice(invoice)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                        Cetak Invoice
+                        Cetak
                       </a>
                       <a v-if="invoice.status !== 'Lunas'" @click.prevent="markAsPaid(invoice.id)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                         Tandai Lunas
                       </a>
                       <a @click.prevent="deleteInvoice(invoice.id)" href="#" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-                        Hapus Invoice
+                        Hapus
                       </a>
                     </div>
                   </div>
@@ -163,8 +162,8 @@ const printInvoice = (invoice) => {
     <CreateInvoiceModal 
       :isOpen="isModalOpen"
       :nextInvoiceNumber="nextInvoiceNumber"
-      :inventoryItems="inventoryItems"
       :invoiceToEdit="editingInvoice"
+      :inventoryItems="inventoryItems" 
       @close="isModalOpen = false"
       @saveInvoice="handleSaveInvoice"
       @updateInvoice="handleUpdateInvoice"

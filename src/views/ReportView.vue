@@ -1,12 +1,27 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { invoices } from '../store.js'; // <-- Mengambil data dari store terpusat
+import { storeToRefs } from 'pinia';
+
+// ## PERUBAHAN 1: Impor store Pinia, hapus impor lama ##
+import { useInvoiceStore } from '../stores/invoice';
+
+// Komponen chart tetap sama
 import BarChart from '../components/charts/BarChart.vue';
 import DoughnutChart from '../components/charts/DoughnutChart.vue';
 
+// ## PERUBAHAN 2: Buat instance dari invoice store ##
+const invoiceStore = useInvoiceStore();
+
+// ## PERUBAHAN 3: Ambil state 'invoices' secara reaktif ##
+const { invoices } = storeToRefs(invoiceStore);
+
+// State lokal untuk UI, tidak ada perubahan
 const selectedPeriod = ref('thisMonth');
 
-// --- Logika Filter Tanggal ---
+// --- SEMUA LOGIKA COMPUTED ANDA DI BAWAH INI TIDAK PERLU DIUBAH ---
+// Karena `invoices` dari storeToRefs sudah reaktif, semua computed property
+// yang bergantung padanya akan otomatis bekerja.
+
 const filteredInvoices = computed(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -38,7 +53,6 @@ const filteredInvoices = computed(() => {
     return invoices.value;
 });
 
-// --- STATISTIK (Menggunakan data yang sudah difilter) ---
 const totalPendapatan = computed(() =>
     filteredInvoices.value
         .filter(inv => inv.status === 'Lunas')
@@ -70,12 +84,8 @@ const produkTerlaris = computed(() => {
     return Object.entries(productSales).sort((a, b) => b[1] - a[1])[0][0];
 });
 
-
-// --- DATA GRAFIK ---
 const chartDataPendapatan = computed(() => {
-    // Logika akurat untuk menghitung pendapatan per minggu
-    const weeklyRevenue = [0, 0, 0, 0]; // [Minggu 1, Minggu 2, Minggu 3, Minggu 4]
-    
+    const weeklyRevenue = [0, 0, 0, 0];
     filteredInvoices.value
       .filter(i => i.status === 'Lunas')
       .forEach(inv => {
@@ -85,17 +95,14 @@ const chartDataPendapatan = computed(() => {
         else if (dayOfMonth <= 21) weeklyRevenue[2] += inv.totalAmount;
         else weeklyRevenue[3] += inv.totalAmount;
       });
-
     return {
         labels: ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'],
-        datasets: [
-            {
-                label: 'Pendapatan (Rp)',
-                backgroundColor: '#BF202F',
-                borderRadius: 6,
-                data: weeklyRevenue,
-            },
-        ],
+        datasets: [{
+            label: 'Pendapatan (Rp)',
+            backgroundColor: '#BF202F',
+            borderRadius: 6,
+            data: weeklyRevenue,
+        }],
     };
 });
 
@@ -110,21 +117,55 @@ const chartDataProduk = computed(() => {
             productSales[name] += item.quantity;
         });
     });
-    
     const sortedProducts = Object.entries(productSales).sort((a,b) => b[1] - a[1]).slice(0, 4);
-
     return {
         labels: sortedProducts.map(p => p[0]),
-        datasets: [
-            {
-                backgroundColor: ['#E84D43', '#3B82F6', '#10B981', '#F59E0B'],
-                data: sortedProducts.map(p => p[1])
-            }
-        ]
+        datasets: [{
+            backgroundColor: ['#E84D43', '#3B82F6', '#10B981', '#F59E0B'],
+            data: sortedProducts.map(p => p[1])
+        }]
     };
 });
 
 const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
+
+// ## PERUBAHAN 4: Tambahkan fungsi ekspor CSV ##
+const exportReportToCSV = () => {
+    const dataToExport = filteredInvoices.value;
+    if (dataToExport.length === 0) {
+        alert("Tidak ada data untuk diekspor pada periode ini.");
+        return;
+    }
+
+    // Siapkan data untuk CSV
+    const csvRows = [];
+    const headers = ['Nomor Invoice', 'Pelanggan', 'Tanggal Terbit', 'Total', 'Status', 'DP'];
+    csvRows.push(headers.join(','));
+
+    for (const invoice of dataToExport) {
+        const values = [
+            invoice.invoiceNumber,
+            `"${invoice.customerName.replace(/"/g, '""')}"`, // Handle koma di nama
+            invoice.issueDate,
+            invoice.totalAmount,
+            invoice.status,
+            invoice.dp || 0
+        ];
+        csvRows.push(values.join(','));
+    }
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    const today = new Date().toISOString().slice(0, 10);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `laporan-invoice-${today}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
 </script>
 
 <template>
@@ -138,7 +179,8 @@ const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { style: 'curre
                 <option value="lastMonth">Bulan Lalu</option>
                 <option value="thisYear">Tahun Ini</option>
             </select>
-            <button class="bg-gray-700 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-lg flex items-center">
+            <!-- ## PERUBAHAN 5: Hubungkan tombol dengan fungsi ekspor ## -->
+            <button @click="exportReportToCSV" class="bg-gray-700 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-lg flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
@@ -166,14 +208,12 @@ const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { style: 'curre
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
                 <h3 class="font-semibold text-gray-800 mb-4">Tren Pendapatan</h3>
-                <!-- Wrapper untuk membatasi tinggi chart -->
                 <div class="relative h-80">
                     <BarChart :chart-data="chartDataPendapatan" />
                 </div>
             </div>
             <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
                 <h3 class="font-semibold text-gray-800 mb-4">Penjualan per Produk</h3>
-                <!-- Wrapper untuk membatasi tinggi chart -->
                 <div class="relative h-80">
                     <DoughnutChart :chart-data="chartDataProduk" />
                 </div>

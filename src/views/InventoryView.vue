@@ -1,21 +1,26 @@
 <script setup>
 import { ref, computed } from 'vue';
-import AddItemModal from '../components/AddItemModal.vue';
+import { storeToRefs } from 'pinia';
 import Swal from 'sweetalert2';
 
+// ## PERUBAHAN 1: Impor store Pinia ##
+import { useInventoryStore } from '../stores/inventory';
+
+// Komponen lokal
+import AddItemModal from '../components/AddItemModal.vue';
+
+// ## PERUBAHAN 2: Buat instance dari store ##
+const inventoryStore = useInventoryStore();
+
+// ## PERUBAHAN 3: Ambil state `inventoryItems` secara reaktif ##
+const { inventoryItems } = storeToRefs(inventoryStore);
+
+// State lokal untuk UI, tidak ada perubahan
 const isModalOpen = ref(false);
 const openMenuId = ref(null); 
-const editingItem = ref(null); 
+const activeItem = ref(null); 
 
-// DATA DIPERBARUI DENGAN PROPERTI 'unit'
-const inventoryItems = ref([
-  { id: 1, code: 'ITM-333', name: 'Spanduk', type: 'Printing', quality: 'flexi', stock: 50, unit: 'meter' },
-  { id: 2, code: 'ITM-334', name: 'Spanduk', type: 'Printing', quality: 'albatros', stock: 25, unit: 'meter' },
-  { id: 3, code: 'ITM-335', name: 'Spanduk', type: 'Printing', quality: 'flexi', stock: 40, unit: 'meter' },
-  { id: 4, code: 'ITM-336', name: 'Stiker A3+', type: 'Sticker', quality: 'vinyl', stock: 8, unit: 'pcs' },
-  { id: 5, code: 'ITM-337', name: 'Kartu Nama', type: 'Card', quality: 'art carton', stock: 150, unit: 'box' },
-]);
-
+// Semua logika computed dan fungsi UI Anda tidak perlu diubah
 const getStockStatus = (stock) => {
   if (stock >= 50) {
     return { label: 'High', dotClass: 'bg-green-500', textClass: 'text-green-600' };
@@ -34,21 +39,22 @@ const filteredItems = computed(() => {
   const query = searchQuery.value.toLowerCase();
   return inventoryItems.value.filter(item => 
     item.name.toLowerCase().includes(query) ||
-    item.code.toLowerCase().includes(query) ||
-    item.type.toLowerCase().includes(query) ||
-    item.quality.toLowerCase().includes(query)
+    item.code.toLowerCase().includes(query)
   );
 });
 
 const openAddModal = () => {
-  editingItem.value = null;
+  // ## PERUBAHAN 4: Gunakan getter `nextItemCode` dari store ##
+  activeItem.value = { code: inventoryStore.nextItemCode };
   isModalOpen.value = true;
 };
 const openEditModal = (item) => {
-  editingItem.value = { ...item };
+  activeItem.value = { ...item };
   isModalOpen.value = true;
   openMenuId.value = null;
 };
+
+// ## PERUBAHAN 5: Fungsi CRUD memanggil 'actions' dari store ##
 
 const deleteItem = (itemId) => {
   openMenuId.value = null;
@@ -63,31 +69,28 @@ const deleteItem = (itemId) => {
     cancelButtonText: 'Batal'
   }).then((result) => {
     if (result.isConfirmed) {
-      inventoryItems.value = inventoryItems.value.filter(item => item.id !== itemId);
+      inventoryStore.deleteItem(itemId); // Panggil action
       Swal.fire('Dihapus!', 'Item Anda telah berhasil dihapus.', 'success')
     }
   })
 };
 
 const handleAddItem = (newItem) => {
-  const newId = inventoryItems.value.length ? Math.max(...inventoryItems.value.map(item => item.id)) + 1 : 1;
-  inventoryItems.value.push({ id: newId, ...newItem });
+  inventoryStore.addNewItem(newItem); // Panggil action
 };
 const handleUpdateItem = (updatedItem) => {
-  const index = inventoryItems.value.findIndex(item => item.id === updatedItem.id);
-  if (index !== -1) {
-    inventoryItems.value[index] = updatedItem;
-  }
+  inventoryStore.updateItem(updatedItem); // Panggil action
 };
 </script>
 
 <template>
+  <!-- Template Anda tidak perlu diubah sama sekali -->
   <div class="relative" @click="openMenuId = null">
     <div class="mb-6">
       <input 
         v-model="searchQuery"
         type="text" 
-        placeholder="Cari berdasarkan nama, kode, tipe..."
+        placeholder="Cari berdasarkan nama, kode..."
         class="w-full md:w-1/3 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-shadow"
       >
     </div>
@@ -100,8 +103,6 @@ const handleUpdateItem = (updatedItem) => {
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">#</th>
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Code</th>
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Name</th>
-              <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Type</th>
-              <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Quality</th>
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Unit</th>
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Stock</th>
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">Status</th>
@@ -113,8 +114,6 @@ const handleUpdateItem = (updatedItem) => {
               <td class="py-5 px-6 text-gray-500">{{ index + 1 }}</td>
               <td class="py-5 px-6 font-medium text-gray-900">{{ item.code }}</td>
               <td class="py-5 px-6 text-gray-600">{{ item.name }}</td>
-              <td class="py-5 px-6 text-gray-600">{{ item.type }}</td>
-              <td class="py-5 px-6 text-gray-600">{{ item.quality }}</td>
               <td class="py-5 px-6 text-gray-600">{{ item.unit }}</td>
               <td class="py-5 px-6 font-medium text-gray-900">{{ item.stock }}</td>
               <td class="py-5 px-6">
@@ -157,7 +156,7 @@ const handleUpdateItem = (updatedItem) => {
 
     <AddItemModal 
       :isOpen="isModalOpen" 
-      :itemToEdit="editingItem"
+      :itemData="activeItem"
       @close="isModalOpen = false"
       @addItem="handleAddItem"
       @updateItem="handleUpdateItem"
