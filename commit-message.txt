@@ -1,52 +1,46 @@
-feat(refactor): Migrasi ke Pinia, Fitur Notifikasi, dan Peningkatan UI
+feat(core): Migrasi State ke Pinia & Implementasi Fitur Baru
 
-Pembaruan besar ini merombak manajemen state aplikasi dan menambahkan beberapa fitur kunci serta perbaikan.
+Pembaruan besar ini merombak total manajemen state aplikasi dengan beralih sepenuhnya ke Pinia dan memperkenalkan beberapa fitur kunci serta perbaikan UI.
 
-🌟 Perubahan Utama (Major Changes)
-Refactor: Migrasi ke Pinia Store
+Perubahan Utama:
+Refaktorisasi State Management ke Pinia:
 
-Seluruh manajemen state yang sebelumnya menggunakan file store.js tunggal telah dimigrasi sepenuhnya ke arsitektur Pinia yang modular.
+Menghapus store.js yang lama.
 
-State sekarang dipecah menjadi tiga store yang lebih terkelola: authStore, inventoryStore, dan invoiceStore.
+Membuat store modular di src/stores/ untuk auth, inventory, dan invoice.
 
-Semua komponen yang relevan (Login, Layout, Invoice, Inventory, Dashboard, Report) telah diperbarui untuk menggunakan store Pinia.
+Semua komponen (LoginView, DefaultLayout, InvoiceView, ReportView, DashboardView, AddItemModal, dll.) telah diperbarui untuk menggunakan store Pinia.
 
-✨ Fitur & Peningkatan Baru (New Features & Enhancements)
-Dashboard Dinamis & Responsif
+Dashboard dengan Data Dinamis:
 
-Halaman Dashboard sekarang menampilkan data yang sepenuhnya dinamis dari invoiceStore.
+Menghapus semua data dummy dari DashboardView.vue.
 
-Kartu "Produk Terlaris", "Statistik Penjualan Bulanan", dan "Traffic by Customer" sekarang mencerminkan data invoice yang sebenarnya.
+Kartu statistik (Produk Terlaris), grafik penjualan bulanan, dan grafik sumber pelanggan sekarang dihitung secara dinamis dari data invoiceStore.
 
-Grafik Penjualan Bulanan diubah dari Bar Chart menjadi Line Chart untuk visualisasi tren yang lebih baik.
+Grafik penjualan bulanan diubah dari Bar Chart menjadi Line Chart yang lebih modern.
 
-Grafik dibuat responsif dan beradaptasi dengan baik di tampilan mobile.
+Grafik dibuat responsif untuk tampilan mobile yang lebih baik.
 
-Sistem Notifikasi Stok Kritis
+Fitur Notifikasi Stok Kritis:
 
-Mengimplementasikan fitur notifikasi untuk memberitahu pengguna tentang item yang stoknya menipis.
+Menambahkan lowStockThreshold pada item inventori.
 
-Menambahkan badge notifikasi pada ikon lonceng di header.
+Membuat getter lowStockItems di inventoryStore untuk memfilter item yang stoknya menipis.
 
-Membuat komponen dropdown notifikasi dengan UI yang modern dan informatif.
+Membuat komponen UI baru NotificationDropdown.vue dengan desain yang menarik.
 
-Peningkatan Manajemen User
+Mengintegrasikan sistem notifikasi ke DefaultLayout dengan badge yang menunjukkan jumlah notifikasi.
 
-Memperbaiki alur pembuatan user baru. Pengguna yang baru dibuat sekarang secara otomatis memiliki status "Aktif" dan bisa langsung digunakan untuk login.
+Perbaikan Fungsional & Bug:
 
-🐞 Perbaikan Bug (Bug Fixes)
-Login Redirect Berdasarkan Peran
+Memperbaiki logika "Smart Redirect" setelah login untuk mengarahkan Admin dan Staf ke halaman yang berbeda.
 
-Memperbaiki logika redirect setelah login. Pengguna dengan peran 'Staf' sekarang diarahkan ke halaman /inventory, sementara 'Admin' diarahkan ke /dashboard, menghilangkan pesan error "tidak ada hak akses".
+Memastikan stok inventori berkurang secara otomatis saat invoice baru dibuat.
 
-Konektivitas Data
+Memperbaiki fungsi "Tandai Lunas" dan "Tambah User Baru".
 
-Memperbaiki masalah di mana daftar item inventori tidak muncul di form pembuatan invoice baru setelah refaktorisasi.
+Memperbaiki berbagai bug minor yang muncul selama proses refaktorisasi.
 
-Fungsionalitas Store
+Data Dummy yang Diperbanyak:
 
-Memperbaiki dan menambahkan actions yang hilang di dalam store Pinia (seperti addUser, markInvoiceAsPaid, addItem) yang menyebabkan tombol-tombol tidak berfungsi.
-
-Error Render & Template
-
-Menyelesaikan berbagai error TypeError dan ReferenceError yang muncul selama proses refaktorisasi dengan memastikan komponen di-render hanya ketika datanya sudah siap.
+Memperluas daftar item di inventoryStore dan invoiceStore untuk membuat aplikasi terlihat lebih hidup dan mempermudah pengujian.
