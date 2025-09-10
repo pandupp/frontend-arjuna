@@ -1,41 +1,37 @@
 <script setup>
-import { ref, computed } from 'vue';
+// ## BAGIAN 1: IMPORTS & SETUP ##
+// Impor `onMounted` dan service tetap dibutuhkan
+import { ref, computed, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import Swal from 'sweetalert2';
-
-// ## PERUBAHAN 1: Impor store Pinia ##
 import { useInventoryStore } from '../stores/inventory';
+import { inventoryService } from '../services/inventoryService';
 
-// Komponen lokal
+// Impor komponen modal
 import AddItemModal from '../components/AddItemModal.vue';
 
-// ## PERUBAHAN 2: Buat instance dari store ##
+// Setup Pinia store
 const inventoryStore = useInventoryStore();
-
-// ## PERUBAHAN 3: Ambil state `inventoryItems` secara reaktif ##
 const { inventoryItems } = storeToRefs(inventoryStore);
 
-// State lokal untuk UI, tidak ada perubahan
+// ## BAGIAN 2: LOCAL STATE UNTUK UI ##
+// State untuk loading dan UI lainnya tidak berubah
+const isLoading = ref(true); 
 const isModalOpen = ref(false);
 const openMenuId = ref(null); 
 const activeItem = ref(null); 
+const searchQuery = ref('');
 
-// Semua logika computed dan fungsi UI Anda tidak perlu diubah
+// ## BAGIAN 3: LOGIKA TAMPILAN (COMPUTED & HELPERS) ##
+// Tidak ada perubahan di sini
 const getStockStatus = (stock) => {
-  if (stock >= 50) {
-    return { label: 'High', dotClass: 'bg-green-500', textClass: 'text-green-600' };
-  } else if (stock >= 10 && stock < 50) {
-    return { label: 'Medium', dotClass: 'bg-yellow-500', textClass: 'text-yellow-600' };
-  } else {
-    return { label: 'Low', dotClass: 'bg-red-500', textClass: 'text-red-600' };
-  }
+  if (stock >= 50) return { label: 'High', dotClass: 'bg-green-500', textClass: 'text-green-600' };
+  if (stock >= 10 && stock < 50) return { label: 'Medium', dotClass: 'bg-yellow-500', textClass: 'text-yellow-600' };
+  return { label: 'Low', dotClass: 'bg-red-500', textClass: 'text-red-600' };
 };
 
-const searchQuery = ref('');
 const filteredItems = computed(() => {
-  if (!searchQuery.value) {
-    return inventoryItems.value;
-  }
+  if (!searchQuery.value) return inventoryItems.value;
   const query = searchQuery.value.toLowerCase();
   return inventoryItems.value.filter(item => 
     item.name.toLowerCase().includes(query) ||
@@ -43,8 +39,26 @@ const filteredItems = computed(() => {
   );
 });
 
+// ## BAGIAN 4: FUNGSI-FUNGSI UTAMA ##
+
+// ## PERUBAHAN UTAMA DI SINI ##
+// Panggil action `fetchAllItems` dari store saat komponen dimuat
+onMounted(async () => {
+  isLoading.value = true;
+  try {
+    // Langsung panggil action dari store. Store yang akan menentukan
+    // apakah akan memakai data dummy atau memanggil service.
+    await inventoryStore.fetchAllItems();
+  } catch (error) {
+    // Penanganan error jika action-nya sendiri gagal
+    Swal.fire('Error', 'Terjadi kesalahan saat mengambil data.', 'error');
+  } finally {
+    isLoading.value = false;
+  }
+});
+
+// Fungsi untuk membuka modal (tidak berubah)
 const openAddModal = () => {
-  // ## PERUBAHAN 4: Gunakan getter `nextItemCode` dari store ##
   activeItem.value = { code: inventoryStore.nextItemCode };
   isModalOpen.value = true;
 };
@@ -54,9 +68,30 @@ const openEditModal = (item) => {
   openMenuId.value = null;
 };
 
-// ## PERUBAHAN 5: Fungsi CRUD memanggil 'actions' dari store ##
+// Fungsi CRUD tetap memanggil service terlebih dahulu, lalu store (tidak berubah)
+async function handleAddItem(newItem) {
+  try {
+    const createdItem = await inventoryService.create(newItem);
+    inventoryStore.addNewItem(createdItem);
+    isModalOpen.value = false;
+    Swal.fire('Berhasil!', 'Item baru telah ditambahkan.', 'success');
+  } catch (error) {
+    Swal.fire('Gagal', 'Tidak dapat menambahkan item baru.', 'error');
+  }
+}
 
-const deleteItem = (itemId) => {
+async function handleUpdateItem(updatedItem) {
+  try {
+    const returnedItem = await inventoryService.update(updatedItem.id, updatedItem);
+    inventoryStore.updateItem(returnedItem);
+    isModalOpen.value = false;
+    Swal.fire('Berhasil!', 'Item telah berhasil diperbarui.', 'success');
+  } catch (error) {
+    Swal.fire('Gagal', 'Tidak dapat memperbarui item.', 'error');
+  }
+}
+
+function deleteItem(itemId) {
   openMenuId.value = null;
   Swal.fire({
     title: 'Anda Yakin?',
@@ -67,25 +102,23 @@ const deleteItem = (itemId) => {
     cancelButtonColor: '#6b7280',
     confirmButtonText: 'Ya, hapus!',
     cancelButtonText: 'Batal'
-  }).then((result) => {
+  }).then(async (result) => {
     if (result.isConfirmed) {
-      inventoryStore.deleteItem(itemId); // Panggil action
-      Swal.fire('Dihapus!', 'Item Anda telah berhasil dihapus.', 'success')
+      try {
+        await inventoryService.delete(itemId);
+        inventoryStore.deleteItem(itemId);
+        Swal.fire('Dihapus!', 'Item Anda telah berhasil dihapus.', 'success');
+      } catch (error) {
+        Swal.fire('Gagal', 'Item tidak dapat dihapus dari server.', 'error');
+      }
     }
-  })
-};
-
-const handleAddItem = (newItem) => {
-  inventoryStore.addNewItem(newItem); // Panggil action
-};
-const handleUpdateItem = (updatedItem) => {
-  inventoryStore.updateItem(updatedItem); // Panggil action
-};
+  });
+}
 </script>
 
 <template>
-  <!-- Template Anda tidak perlu diubah sama sekali -->
   <div class="relative" @click="openMenuId = null">
+    <!-- Bagian Search Bar (Tidak Berubah) -->
     <div class="mb-6">
       <input 
         v-model="searchQuery"
@@ -95,9 +128,20 @@ const handleUpdateItem = (updatedItem) => {
       >
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <!-- Tampilkan pesan loading jika isLoading === true -->
+    <div v-if="isLoading" class="text-center py-16 bg-white rounded-xl shadow-sm border border-gray-100">
+      <p class="text-gray-500 text-lg">Memuat data inventaris...</p>
+    </div>
+
+    <!-- Tampilkan tabel jika loading sudah selesai -->
+    <div v-else class="bg-white rounded-xl shadow-sm border border-gray-100">
       <div class="overflow-x-auto">
-        <table class="w-full text-left">
+        <!-- Tampilkan pesan jika data kosong setelah loading -->
+        <div v-if="!filteredItems.length" class="text-center py-16">
+            <p class="text-gray-500 text-lg">Belum ada data inventaris.</p>
+        </div>
+        <!-- Tampilkan tabel jika ada data -->
+        <table v-else class="w-full text-left">
           <thead class="border-b-2 border-gray-200">
             <tr>
               <th class="py-4 px-6 text-sm font-semibold uppercase tracking-wider text-gray-500">#</th>
@@ -110,7 +154,7 @@ const handleUpdateItem = (updatedItem) => {
             </tr>
           </thead>
           <tbody class="text-sm">
-            <tr v-for="(item, index) in filteredItems" :key="item.id" class="border-b border-gray-200 hover:bg-white">
+            <tr v-for="(item, index) in filteredItems" :key="item.id" class="border-b border-gray-200 hover:bg-gray-50/50">
               <td class="py-5 px-6 text-gray-500">{{ index + 1 }}</td>
               <td class="py-5 px-6 font-medium text-gray-900">{{ item.code }}</td>
               <td class="py-5 px-6 text-gray-600">{{ item.name }}</td>
@@ -153,7 +197,8 @@ const handleUpdateItem = (updatedItem) => {
         </table>
       </div>
     </div>
-
+    
+    <!-- Modal dan Floating Action Button (Tidak Berubah) -->
     <AddItemModal 
       :isOpen="isModalOpen" 
       :itemData="activeItem"
@@ -167,3 +212,4 @@ const handleUpdateItem = (updatedItem) => {
     </button>
   </div>
 </template>
+

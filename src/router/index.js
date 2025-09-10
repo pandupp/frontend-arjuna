@@ -1,60 +1,39 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { useAuthStore } from '../stores/auth'; 
+// 1. Impor store autentikasi kita
+import { useAuthStore } from '../stores/auth';
 
-// ## PERUBAHAN 1: Impor komponen Layout ##
+// Impor komponen-komponen halaman Anda
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import LoginView from '../views/LoginView.vue';
 import DashboardView from '../views/DashboardView.vue';
 import InventoryView from '../views/InventoryView.vue';
 import InvoiceView from '../views/InvoiceView.vue';
 import ReportView from '../views/ReportView.vue';
+// ## PERBAIKAN: Ganti nama file agar sesuai dengan proyek Anda ##
 import UserManagementView from '../views/UserManagementView.vue';
 
 const routes = [
-  // Rute untuk login berada di luar layout utama
   {
-    path: '/login', 
+    path: '/login',
     name: 'Login',
     component: LoginView,
   },
-  // ## PERUBAHAN 2: Buat satu rute utama yang menggunakan DefaultLayout ##
   {
     path: '/',
-    component: DefaultLayout, // Komponen ini akan menjadi "pembungkus"
-    redirect: '/dashboard', // Jika akses '/', langsung ke dashboard
-    children: [ // Semua halaman di bawah ini akan ditampilkan DI DALAM DefaultLayout
-      {
-        path: '/dashboard', 
-        name: 'Dashboard',
-        component: DashboardView,
-        meta: { requiresAuth: true, role: 'Admin' } 
-      },
-      { 
-        path: '/inventory',
-        name: 'Inventory',
-        component: InventoryView,
-        meta: { requiresAuth: true } 
-      },
-      {
-        path: '/invoices',
-        name: 'Invoices',
-        component: InvoiceView,
-        meta: { requiresAuth: true } 
-      },
-      {
-        path: '/reports',
-        name: 'Reports',
-        component: ReportView,
-        meta: { requiresAuth: true, role: 'Admin' }
-      },
-      {
-        path: '/users',
-        name: 'Users',
-        component: UserManagementView,
-        meta: { requiresAuth: true, role: 'Admin'} 
-      },
-    ]
-  }
+    component: DefaultLayout,
+    redirect: '/dashboard',
+    // 2. Beri penanda pada semua halaman yang butuh login
+    meta: { requiresAuth: true },
+    children: [
+      { path: 'dashboard', name: 'Dashboard', component: DashboardView },
+      { path: 'inventory', name: 'Inventory', component: InventoryView },
+      { path: 'invoices', name: 'Invoices', component: InvoiceView },
+      { path: 'reports', name: 'Reports', component: ReportView },
+      // Contoh: halaman user hanya bisa diakses oleh Admin
+      // ## PERBAIKAN: Gunakan komponen yang benar ##
+      { path: 'users', name: 'Users', component: UserManagementView, meta: { requiresAdmin: true } }, 
+    ],
+  },
 ];
 
 const router = createRouter({
@@ -62,25 +41,35 @@ const router = createRouter({
   routes,
 });
 
-// Navigation guard tidak perlu diubah, sudah benar
+// 3. Inilah "Satpam" atau Route Guard kita yang sudah disempurnakan
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
   
-  const userIsLoggedIn = authStore.isLoggedIn;
-  const currentUserRole = authStore.userRole;
-  const requiredRole = to.meta.role;
-  
-  if (to.meta.requiresAuth && !userIsLoggedIn) {
+  const isLoggedIn = authStore.isLoggedIn;
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin);
+
+  // ## LOGIKA TAMBAHAN ##
+  // Jika pengguna sudah login dan mencoba mengakses halaman Login
+  if (to.name === 'Login' && isLoggedIn) {
+    // Lemparkan mereka kembali ke dashboard untuk mencegah kebingungan
+    next({ name: 'Dashboard' });
+  }
+  // Jika rute tujuan butuh login DAN pengguna belum login
+  else if (requiresAuth && !isLoggedIn) {
+    // Lemparkan pengguna ke halaman login
     next({ name: 'Login' });
   } 
-  else if (to.name === 'Login' && userIsLoggedIn) {
-    next({ path: '/dashboard' });
+  // Jika rute tujuan butuh role Admin DAN pengguna bukan Admin
+  else if (requiresAdmin && authStore.userRole !== 'Admin') {
+    // Tampilkan pesan dan lemparkan ke halaman yang aman (misal: Dashboard)
+    // Di aplikasi nyata, gunakan komponen notifikasi yang lebih baik daripada alert.
+    alert('Anda tidak memiliki hak akses ke halaman ini.');
+    next({ name: 'Dashboard' });
   }
-  else if (requiredRole && requiredRole !== currentUserRole) {
-    alert('Anda tidak memiliki hak akses untuk halaman ini.');
-    next({ path: from.path || '/inventory' }); // Kembali atau ke halaman default
-  }
+  // Jika semua syarat terpenuhi
   else {
+    // Izinkan pengguna melanjutkan
     next();
   }
 });

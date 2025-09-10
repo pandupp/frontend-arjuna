@@ -1,41 +1,50 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import Swal from 'sweetalert2';
 
-// 1. Impor store dan komponen modal (asumsi nama komponen)
+// 1. Impor store dan komponen modal
 import { useAuthStore } from '../stores/auth';
-import AddUserModal from '../components/AddUserModal.vue'; // Ganti jika nama file berbeda
+import AddUserModal from '../components/AddUserModal.vue'; 
 
 // 2. Inisialisasi store
 const authStore = useAuthStore();
 const { users } = storeToRefs(authStore);
 
 // 3. State lokal untuk UI
+const isLoading = ref(true);
 const isModalOpen = ref(false);
-const editingUser = ref(null);
+const editingUser = ref(null); // Disimpan untuk fungsionalitas edit nanti
+
+// 4. Ambil data saat komponen dimuat
+onMounted(async () => {
+  isLoading.value = true;
+  try {
+    await authStore.fetchAllUsers();
+  } catch(error) {
+    Swal.fire('Error', 'Gagal memuat data pengguna.', 'error');
+  } finally {
+    isLoading.value = false;
+  }
+});
 
 const openAddModal = () => {
   editingUser.value = null;
   isModalOpen.value = true;
 };
 
-// ## PERBAIKAN UTAMA ADA DI SINI ##
-const handleSaveUser = (newUserData) => {
-  // Saat menyimpan user baru, tambahkan properti yang hilang
-  const nextId = users.value.length ? Math.max(...users.value.map(u => u.id)) + 1 : 1;
-  const userToSave = {
-    id: nextId,
-    ...newUserData,
-    status: 'Aktif', // <-- Otomatis set status menjadi Aktif
-    joinDate: new Date().toISOString().slice(0, 10) // <-- Tambahkan tanggal bergabung
-  };
-  
-  // Panggil action dari store
-  authStore.addUser(userToSave);
+// 5. Logika simpan dan hapus yang memanggil store
+async function handleSaveUser(newUserData) {
+  try {
+    await authStore.addUser(newUserData);
+    isModalOpen.value = false;
+    Swal.fire('Berhasil!', 'User baru telah ditambahkan.', 'success');
+  } catch (error) {
+    Swal.fire('Gagal', 'Tidak dapat menambahkan user baru.', 'error');
+  }
 };
 
-const deleteUser = (userId) => {
+function deleteUser(userId) {
     Swal.fire({
         title: 'Anda Yakin?',
         text: "Data user yang dihapus tidak bisa dikembalikan!",
@@ -45,10 +54,14 @@ const deleteUser = (userId) => {
         cancelButtonColor: '#6b7280',
         confirmButtonText: 'Ya, hapus!',
         cancelButtonText: 'Batal'
-    }).then((result) => {
+    }).then(async (result) => {
         if (result.isConfirmed) {
-            authStore.deleteUser(userId); // Asumsi ada action deleteUser di store
-            Swal.fire('Dihapus!', 'User telah berhasil dihapus.', 'success');
+            try {
+              await authStore.deleteUser(userId);
+              Swal.fire('Dihapus!', 'User telah berhasil dihapus.', 'success');
+            } catch (error) {
+              Swal.fire('Gagal', 'User tidak dapat dihapus.', 'error');
+            }
         }
     });
 };
@@ -63,8 +76,17 @@ const deleteUser = (userId) => {
       </button>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-      <table class="w-full text-left">
+    <!-- Tampilkan pesan loading -->
+    <div v-if="isLoading" class="text-center py-16">
+      <p class="text-gray-500 text-lg">Memuat data pengguna...</p>
+    </div>
+
+    <!-- Tampilkan tabel setelah loading selesai -->
+    <div v-else class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+      <div v-if="!users.length" class="text-center py-16">
+        <p class="text-gray-500 text-lg">Belum ada data pengguna.</p>
+      </div>
+      <table v-else class="w-full text-left">
         <thead>
           <tr class="border-b-2 border-gray-200">
             <th class="py-4 px-6 text-sm font-semibold uppercase text-gray-500">Nama</th>

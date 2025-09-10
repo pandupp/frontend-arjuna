@@ -1,62 +1,117 @@
 import { defineStore } from 'pinia';
+import { ref } from 'vue';
+import { userService } from '../services/userService'; // Impor service
 
-export const useAuthStore = defineStore('auth', {
-  state: () => ({
-    isLoggedIn: false,
-    userRole: null,
-    users: [
-      { id: 1, name: 'Amaik Syahroni', email: 'admin@arjuna.com', password: 'password123', role: 'Admin', status: 'Aktif', joinDate: '2025-01-15' },
-      { id: 2, name: 'Budi Santoso', email: 'budi@arjuna.com', password: 'password456', role: 'Staf', status: 'Aktif', joinDate: '2025-02-20' },
-      { id: 3, name: 'Citra Lestari', email: 'citra@arjuna.com', password: 'password789', role: 'Staf', status: 'Tidak Aktif', joinDate: '2025-03-10' },
-    ],
-  }),
+// Data dummy untuk mode demo
+const DUMMY_USER_DATA = [
+  { id: 1, name: 'Amaik Syahroni', email: 'admin@arjuna.com', password: 'password123', role: 'Admin', status: 'Aktif', joinDate: '2025-01-15' },
+  { id: 2, name: 'Budi Santoso', email: 'budi@arjuna.com', password: 'password456', role: 'Staf', status: 'Aktif', joinDate: '2025-02-20' },
+  { id: 3, name: 'Citra Lestari', email: 'citra@arjuna.com', password: 'password789', role: 'Staf', status: 'Tidak Aktif', joinDate: '2025-03-10' },
+];
 
-  getters: {
-    isAdmin: (state) => state.userRole === 'Admin',
-  },
+// Menggunakan sintaks Composition API agar konsisten dengan store lain
+export const useAuthStore = defineStore('auth', () => {
+  // --- STATE ---
+  const users = ref([]);
+  // Inisialisasi awal sebagai false, akan diisi oleh checkLoginStatus
+  const isLoggedIn = ref(false);
+  const userRole = ref(null);
 
-  actions: {
-    // ## TAMBAHKAN ACTION INI ##
-    // Fungsi untuk menambah user baru ke dalam state
-    addUser(userData) {
-      this.users.push(userData);
-    },
+  // --- ACTIONS ---
 
-    // ## TAMBAHKAN JUGA ACTION INI UNTUK TOMBOL HAPUS ##
-    deleteUser(userId) {
-      this.users = this.users.filter(user => user.id !== userId);
-    },
-
-    // --- Sisa actions (login, logout, dll) tidak berubah ---
-    login(email, password) {
-      const user = this.users.find(
-        u => u.email === email && u.password === password && u.status === 'Aktif'
-      );
-      if (user) {
-        this.isLoggedIn = true;
-        this.userRole = user.role;
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('userRole', user.role);
-        return true;
+  // ## Action utama dengan "saklar cerdas" ##
+  async function fetchAllUsers() {
+    if (import.meta.env.VITE_MOCK_API === 'true') {
+      console.log("MODE DEMO: Menggunakan data user dummy dari store.");
+      const allUsers = [...DUMMY_USER_DATA]; 
+      users.value = allUsers.filter(u => u.role !== 'Admin'); // Tampilkan semua kecuali admin utama
+      return;
+    }
+    
+    try {
+      console.log("MODE PRODUKSI: Menghubungi service untuk data user...");
+      const usersFromApi = await userService.getAll();
+      if (Array.isArray(usersFromApi)) {
+        users.value = usersFromApi;
+      } else {
+        console.error("Data user dari API bukan array!", usersFromApi);
+        users.value = [];
       }
-      this.isLoggedIn = false;
-      this.userRole = null;
-      return false;
-    },
-    logout() {
-      this.isLoggedIn = false;
-      this.userRole = null;
-      localStorage.removeItem('isLoggedIn');
-      localStorage.removeItem('userRole');
-    },
-    checkLoginStatus() {
-      const loggedInStatus = localStorage.getItem('isLoggedIn');
-      const storedRole = localStorage.getItem('userRole');
-      if (loggedInStatus === 'true' && storedRole) {
-        this.isLoggedIn = true;
-        this.userRole = storedRole;
-      }
-    },
-  },
+    } catch (error) {
+      console.error("Gagal mengambil data user dari service:", error);
+      users.value = [];
+      throw error;
+    }
+  }
+
+  async function addUser(newUserData) {
+    if (import.meta.env.VITE_MOCK_API === 'true') {
+        const nextId = users.value.length ? Math.max(...DUMMY_USER_DATA.map(u => u.id), ...users.value.map(u=>u.id)) + 1 : 1;
+        const userToSave = {
+            id: nextId, ...newUserData,
+            status: 'Aktif', joinDate: new Date().toISOString().slice(0, 10)
+        };
+        users.value.unshift(userToSave);
+        DUMMY_USER_DATA.push(userToSave);
+        return userToSave;
+    }
+    const createdUser = await userService.create(newUserData);
+    users.value.unshift(createdUser);
+    return createdUser;
+  }
+
+  async function deleteUser(userId) {
+     if (import.meta.env.VITE_MOCK_API === 'true') {
+        users.value = users.value.filter(user => user.id !== userId);
+        return;
+     }
+     await userService.delete(userId);
+     users.value = users.value.filter(user => user.id !== userId);
+  }
+  
+  function login(email, password) {
+    const user = DUMMY_USER_DATA.find(
+      u => u.email === email && u.password === password && u.status === 'Aktif'
+    );
+    if (user) {
+      isLoggedIn.value = true;
+      userRole.value = user.role;
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('userRole', user.role);
+      return true;
+    }
+    isLoggedIn.value = false;
+    userRole.value = null;
+    return false;
+  }
+
+  function logout() {
+    isLoggedIn.value = false;
+    userRole.value = null;
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('userRole');
+  }
+
+  // ## PERBAIKAN: Tambahkan kembali fungsi ini untuk kompatibilitas ##
+  function checkLoginStatus() {
+    const loggedInStatus = localStorage.getItem('isLoggedIn');
+    const storedRole = localStorage.getItem('userRole');
+    if (loggedInStatus === 'true' && storedRole) {
+      isLoggedIn.value = true;
+      userRole.value = storedRole;
+    }
+  }
+
+  return { 
+    users,
+    isLoggedIn,
+    userRole,
+    fetchAllUsers,
+    addUser,
+    deleteUser,
+    login,
+    logout,
+    checkLoginStatus, // <-- Pastikan fungsi diekspor
+  };
 });
 

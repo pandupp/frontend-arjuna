@@ -1,8 +1,11 @@
 <script setup>
-import { ref } from 'vue';
+// ## PERUBAHAN 1: Impor onMounted untuk mengambil data saat komponen dimuat ##
+import { ref, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import Swal from 'sweetalert2';
 
+// ## PERUBAHAN 2: Impor 'invoiceService' yang baru saja kita buat ##
+import { invoiceService } from '../services/invoiceService';
 import { useInvoiceStore } from '../stores/invoice';
 import { useInventoryStore } from '../stores/inventory';
 
@@ -12,34 +15,51 @@ import PrintInvoice from '../components/PrintInvoice.vue';
 const invoiceStore = useInvoiceStore();
 const inventoryStore = useInventoryStore();
 
-const { invoices, nextInvoiceNumber } = storeToRefs(invoiceStore);
+// Kita masih butuh store untuk getter (nextInvoiceNumber) dan data lain (inventoryItems)
+const { nextInvoiceNumber } = storeToRefs(invoiceStore);
 const { inventoryItems } = storeToRefs(inventoryStore);
 
+// ## PERUBAHAN 3: Buat state lokal untuk menampung data invoice ##
+// 'invoices' dari store tidak lagi digunakan secara langsung di template
+const viewInvoices = ref([]);
+const isLoading = ref(true); // Tambahkan state untuk loading
+
+// State lokal lainnya tetap sama
 const isModalOpen = ref(false);
 const openMenuId = ref(null);
 const editingInvoice = ref(null);
 const invoiceToPrint = ref(null);
 
-const getInvoiceStatus = (status) => {
-    switch (status) {
-        case 'Lunas': return 'bg-green-100 text-green-700';
-        case 'Tertunda': return 'bg-yellow-100 text-yellow-700';
-        case 'Jatuh Tempo': return 'bg-red-100 text-red-700';
-        default: return 'bg-gray-100 text-gray-700';
-    }
+// ## PERUBAHAN 4: Buat fungsi untuk mengambil data melalui service ##
+const fetchInvoices = async () => {
+  isLoading.value = true;
+  try {
+    // Meminta data ke "jembatan", bukan langsung ke store
+    viewInvoices.value = await invoiceService.getAll();
+  } catch (error) {
+    console.error("Gagal memuat data invoice di komponen:", error);
+    // Di sini bisa ditambahkan notifikasi error untuk pengguna
+  } finally {
+    isLoading.value = false;
+  }
 };
 
-const openAddModal = () => {
-    editingInvoice.value = null;
-    isModalOpen.value = true;
+// Panggil fungsi fetchInvoices saat komponen pertama kali dimuat
+onMounted(fetchInvoices);
+
+// ## PERUBAHAN 5: Ubah 'handleSaveInvoice' menjadi async dan gunakan service ##
+const handleSaveInvoice = async (newInvoiceData) => {
+  try {
+    // Kirim data ke "jembatan"
+    await invoiceService.create(newInvoiceData);
+    // Jika berhasil, ambil kembali daftar invoice terbaru untuk me-refresh tampilan
+    await fetchInvoices(); 
+  } catch (error) {
+     console.error("Gagal menyimpan invoice:", error);
+  }
 };
 
-const openEditModal = (invoice) => {
-    editingInvoice.value = JSON.parse(JSON.stringify(invoice));
-    isModalOpen.value = true;
-    openMenuId.value = null;
-};
-
+// Sisa fungsi (delete, update, dll.) bisa diubah dengan pola yang sama nanti
 const deleteInvoice = (invoiceId) => {
     openMenuId.value = null;
     Swal.fire({
@@ -53,6 +73,7 @@ const deleteInvoice = (invoiceId) => {
         cancelButtonText: 'Batal'
     }).then((result) => {
         if (result.isConfirmed) {
+            // TODO: Ubah ini untuk menggunakan invoiceService.delete(invoiceId)
             invoiceStore.deleteInvoice(invoiceId);
             Swal.fire('Dihapus!', 'Invoice telah berhasil dihapus.', 'success');
         }
@@ -60,25 +81,40 @@ const deleteInvoice = (invoiceId) => {
 };
 
 const markAsPaid = (invoiceId) => {
+    // TODO: Ubah ini untuk menggunakan invoiceService.updateStatus(invoiceId, 'Lunas')
     invoiceStore.markInvoiceAsPaid(invoiceId);
     openMenuId.value = null;
 }
 
-const handleSaveInvoice = (newInvoiceData) => {
-    invoiceStore.addNewInvoice(newInvoiceData);
-    inventoryStore.reduceStockFromInvoice(newInvoiceData);
-};
-
 const handleUpdateInvoice = (updatedInvoice) => {
+    // TODO: Ubah ini untuk menggunakan invoiceService.update(updatedInvoice.id, updatedInvoice)
     invoiceStore.updateInvoice(updatedInvoice);
 }
 
+// Fungsi-fungsi UI tidak perlu diubah
 const printInvoice = (invoice) => {
     invoiceToPrint.value = invoice;
     setTimeout(() => {
         window.print();
         invoiceToPrint.value = null;
     }, 100);
+    openMenuId.value = null;
+};
+const getInvoiceStatus = (status) => {
+    switch (status) {
+        case 'Lunas': return 'bg-green-100 text-green-700';
+        case 'Tertunda': return 'bg-yellow-100 text-yellow-700';
+        case 'Jatuh Tempo': return 'bg-red-100 text-red-700';
+        default: return 'bg-gray-100 text-gray-700';
+    }
+};
+const openAddModal = () => {
+    editingInvoice.value = null;
+    isModalOpen.value = true;
+};
+const openEditModal = (invoice) => {
+    editingInvoice.value = JSON.parse(JSON.stringify(invoice));
+    isModalOpen.value = true;
     openMenuId.value = null;
 };
 </script>
@@ -107,7 +143,12 @@ const printInvoice = (invoice) => {
         >
       </div>
       <div class="overflow-x-auto">
-        <table class="w-full text-left">
+        <!-- Tampilkan pesan loading -->
+        <div v-if="isLoading" class="text-center p-10 text-gray-500">
+          Memuat data invoice...
+        </div>
+        <!-- Tampilkan tabel jika sudah selesai loading DAN ada data -->
+        <table v-else-if="viewInvoices.length > 0" class="w-full text-left">
           <thead class="bg-white">
             <tr>
               <th class="py-3 px-6 text-xs font-medium uppercase tracking-wider text-gray-500">Invoice #</th>
@@ -119,7 +160,8 @@ const printInvoice = (invoice) => {
             </tr>
           </thead>
           <tbody class="text-sm">
-            <tr v-for="invoice in invoices" :key="invoice.id" class="border-t border-gray-100 hover:bg-gray-50">
+            <!-- ## PERUBAHAN 6: Ganti 'invoices' menjadi 'viewInvoices' ## -->
+            <tr v-for="invoice in viewInvoices" :key="invoice.id" class="border-t border-gray-100 hover:bg-gray-50">
               <td class="py-4 px-6 font-medium text-gray-900">{{ invoice.invoiceNumber }}</td>
               <td class="py-4 px-6 text-gray-600">{{ invoice.customerName }}</td>
               <td class="py-4 px-6 text-gray-600">{{ invoice.issueDate }}</td>
@@ -156,6 +198,10 @@ const printInvoice = (invoice) => {
             </tr>
           </tbody>
         </table>
+        <!-- Tampilkan pesan jika sudah selesai loading TAPI tidak ada data -->
+        <div v-else class="text-center p-10 text-gray-500">
+          Belum ada invoice yang dibuat.
+        </div>
       </div>
     </div>
     
