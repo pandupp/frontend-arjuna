@@ -1,0 +1,52 @@
+feat(refactor): Migrasi ke Pinia, Fitur Notifikasi, dan Peningkatan UI
+
+Pembaruan besar ini merombak manajemen state aplikasi dan menambahkan beberapa fitur kunci serta perbaikan.
+
+🌟 Perubahan Utama (Major Changes)
+Refactor: Migrasi ke Pinia Store
+
+Seluruh manajemen state yang sebelumnya menggunakan file store.js tunggal telah dimigrasi sepenuhnya ke arsitektur Pinia yang modular.
+
+State sekarang dipecah menjadi tiga store yang lebih terkelola: authStore, inventoryStore, dan invoiceStore.
+
+Semua komponen yang relevan (Login, Layout, Invoice, Inventory, Dashboard, Report) telah diperbarui untuk menggunakan store Pinia.
+
+✨ Fitur & Peningkatan Baru (New Features & Enhancements)
+Dashboard Dinamis & Responsif
+
+Halaman Dashboard sekarang menampilkan data yang sepenuhnya dinamis dari invoiceStore.
+
+Kartu "Produk Terlaris", "Statistik Penjualan Bulanan", dan "Traffic by Customer" sekarang mencerminkan data invoice yang sebenarnya.
+
+Grafik Penjualan Bulanan diubah dari Bar Chart menjadi Line Chart untuk visualisasi tren yang lebih baik.
+
+Grafik dibuat responsif dan beradaptasi dengan baik di tampilan mobile.
+
+Sistem Notifikasi Stok Kritis
+
+Mengimplementasikan fitur notifikasi untuk memberitahu pengguna tentang item yang stoknya menipis.
+
+Menambahkan badge notifikasi pada ikon lonceng di header.
+
+Membuat komponen dropdown notifikasi dengan UI yang modern dan informatif.
+
+Peningkatan Manajemen User
+
+Memperbaiki alur pembuatan user baru. Pengguna yang baru dibuat sekarang secara otomatis memiliki status "Aktif" dan bisa langsung digunakan untuk login.
+
+🐞 Perbaikan Bug (Bug Fixes)
+Login Redirect Berdasarkan Peran
+
+Memperbaiki logika redirect setelah login. Pengguna dengan peran 'Staf' sekarang diarahkan ke halaman /inventory, sementara 'Admin' diarahkan ke /dashboard, menghilangkan pesan error "tidak ada hak akses".
+
+Konektivitas Data
+
+Memperbaiki masalah di mana daftar item inventori tidak muncul di form pembuatan invoice baru setelah refaktorisasi.
+
+Fungsionalitas Store
+
+Memperbaiki dan menambahkan actions yang hilang di dalam store Pinia (seperti addUser, markInvoiceAsPaid, addItem) yang menyebabkan tombol-tombol tidak berfungsi.
+
+Error Render & Template
+
+Menyelesaikan berbagai error TypeError dan ReferenceError yang muncul selama proses refaktorisasi dengan memastikan komponen di-render hanya ketika datanya sudah siap.

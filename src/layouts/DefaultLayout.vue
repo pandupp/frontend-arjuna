@@ -1,21 +1,26 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-// ## PERUBAHAN 1: Impor storeToRefs dari Pinia dan useAuthStore ##
 import { storeToRefs } from 'pinia';
+
+// ## PERUBAHAN 1: Impor store inventory dan komponen notifikasi baru ##
 import { useAuthStore } from '../stores/auth';
+import { useInventoryStore } from '../stores/inventory';
+import NotificationDropdown from '../components/NotificationDropdown.vue';
 
 const router = useRouter()
-// ## PERUBAHAN 2: Buat instance dari auth store ##
 const authStore = useAuthStore();
+// ## PERUBAHAN 2: Inisialisasi inventory store ##
+const inventoryStore = useInventoryStore();
 
-// ## PERUBAHAN 3: Ambil userRole secara reaktif dari store ##
 const { userRole } = storeToRefs(authStore);
+// ## PERUBAHAN 3: Ambil data item stok rendah secara reaktif dari store ##
+const { lowStockItems } = storeToRefs(inventoryStore);
 
-// State lokal untuk menu mobile, tidak perlu diubah
 const isMobileMenuOpen = ref(false)
+// ## PERUBAHAN 4: Tambahkan state untuk membuka/menutup dropdown notifikasi ##
+const isNotificationsOpen = ref(false);
 
-// Daftar menu Anda, tidak perlu diubah
 const allNavLinks = [
   { 
     name: 'Dashboard', 
@@ -49,8 +54,6 @@ const allNavLinks = [
   },
 ]
 
-// Logika filter menu Anda, tidak perlu diubah.
-// Ini akan tetap bekerja karena `userRole` bersifat reaktif.
 const navLinks = computed(() => {
   const currentRole = userRole.value; 
   return allNavLinks.filter(link => {
@@ -61,7 +64,6 @@ const navLinks = computed(() => {
   });
 })
 
-// ## PERUBAHAN 4: Fungsi logout memanggil action dari store ##
 const handleLogout = () => {
   authStore.logout();
   router.push('/login') 
@@ -69,7 +71,6 @@ const handleLogout = () => {
 </script>
 
 <template>
-  <!-- Template Anda tidak diubah sama sekali -->
   <div class="relative flex h-screen bg-gray-50 text-gray-900 font-sans">
     <!-- Overlay Mobile -->
     <div v-if="isMobileMenuOpen" @click="isMobileMenuOpen = false" class="fixed inset-0 bg-black/30 z-20 md:hidden"></div>
@@ -121,9 +122,22 @@ const handleLogout = () => {
           <h1 class="text-xl font-bold text-gray-800">{{ $route.name }}</h1>
         </div>
         <div class="flex items-center space-x-4">
-          <button class="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-600"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
-          </button>
+          <div class="relative">
+            <button @click="isNotificationsOpen = !isNotificationsOpen" class="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200">
+              <!-- Ikon Lonceng -->
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-600"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
+              <!-- ## PERBAIKAN: Tambahkan pengecekan `v-if="lowStockItems"` ## -->
+              <span v-if="lowStockItems && lowStockItems.length > 0" class="absolute top-0 right-0 h-5 w-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white">
+                {{ lowStockItems.length }}
+              </span>
+            </button>
+            <!-- Dropdown Notifikasi -->
+            <NotificationDropdown 
+              v-if="isNotificationsOpen"
+              :notifications="lowStockItems || []"
+              @close="isNotificationsOpen = false"
+            />
+          </div>
         </div>
       </header>
       
