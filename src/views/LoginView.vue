@@ -13,24 +13,22 @@ const email = ref('admin@arjuna.com');
 const password = ref('password123');
 const errorMessage = ref('');
 
-const handleLogin = () => {
-  errorMessage.value = ''; 
-  
-  // Panggil action 'login' dari store
-  const loginSuccess = authStore.login(email.value, password.value);
+const handleLogin = async () => {
+  errorMessage.value = '';
 
-  if (loginSuccess) {
-    // ## INI ADALAH PERUBAHAN UTAMA: Logika Smart Redirect ##
-    // Setelah login berhasil, periksa peran pengguna dari store
+  // Panggil action 'login' dari store (async)
+  const response = await authStore.login(email.value, password.value);
+
+  if (response && response.success) {
+    // ## Logika Smart Redirect berdasarkan role dari response backend ##
     if (authStore.userRole === 'Admin') {
       router.push('/dashboard');
     } else {
-      // Untuk peran lain (misalnya 'Staf'), arahkan ke halaman inventori
       router.push('/inventory');
     }
   } else {
-    // Jika gagal, tampilkan pesan error
-    errorMessage.value = 'Email atau password salah, atau akun tidak aktif.';
+    // Jika gagal, tampilkan pesan error dari backend atau default
+    errorMessage.value = response?.message || 'Email atau password salah, atau akun tidak aktif.';
   }
 };
 </script>
@@ -43,26 +41,26 @@ const handleLogin = () => {
           <h2 class="text-4xl font-bold text-gray-800">Hello!</h2>
           <p class="text-gray-500 mt-2">Sign in to get started.</p>
       </div>
-      
+
       <form class="space-y-6" @submit.prevent="handleLogin">
         <div>
           <label for="email-address" class="block text-sm font-medium text-gray-700 mb-2">Alamat Email</label>
-          <input 
-            id="email-address" 
-            name="email" 
-            type="email" 
-            v-model="email" 
+          <input
+            id="email-address"
+            name="email"
+            type="email"
+            v-model="email"
             required
             class="appearance-none block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm"
             placeholder="admin@arjuna.com">
         </div>
         <div>
           <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
-          <input 
-            id="password" 
-            name="password" 
-            type="password" 
-            v-model="password" 
+          <input
+            id="password"
+            name="password"
+            type="password"
+            v-model="password"
             required
             class="appearance-none block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm"
             placeholder="••••••••">
@@ -82,4 +80,3 @@ const handleLogin = () => {
     </div>
   </div>
 </template>
-

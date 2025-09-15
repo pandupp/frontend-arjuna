@@ -1,5 +1,4 @@
 <script setup>
-// Script setup tidak perlu diubah, semua perubahan ada di template
 import { ref, computed, watch, watchEffect } from 'vue';
 import vSelect from 'vue-select';
 import 'vue-select/dist/vue-select.css';
@@ -11,6 +10,16 @@ const props = defineProps({
   invoiceToEdit: Object,
 });
 
+// Debug logging untuk memeriksa data inventory
+watchEffect(() => {
+  if (props.inventoryItems && Array.isArray(props.inventoryItems)) {
+    // Inventory items loaded for modal (production: no console)
+    // if (props.inventoryItems.length > 0) {
+    //   // Sample item: props.inventoryItems[0]
+    // }
+  }
+});
+
 const emit = defineEmits(['close', 'saveInvoice', 'updateInvoice']);
 const isEditMode = computed(() => !!props.invoiceToEdit);
 const createNewInvoiceTemplate = () => ({
@@ -20,7 +29,7 @@ const createNewInvoiceTemplate = () => ({
   dueDateEnabled: false,
   dueDate: '',
   source: 'Customer Order',
-  items: [{ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '' }],
+  items: [{ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '', inventory_id: null }],
   discount: 0,
   taxEnabled: false,
   dp: 0,
@@ -30,7 +39,7 @@ watchEffect(() => {
   if (props.isOpen) {
     if (isEditMode.value) {
       const invoiceData = JSON.parse(JSON.stringify(props.invoiceToEdit));
-      invoiceData.items = invoiceData.items || [{ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '' }];
+      invoiceData.items = invoiceData.items || [{ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '', inventory_id: null }];
       invoiceData.dp = invoiceData.dp || 0;
       invoiceData.dueDateEnabled = invoiceData.dueDateEnabled ?? false;
       newInvoice.value = invoiceData;
@@ -50,9 +59,12 @@ watch(() => newInvoice.value.items, (items) => {
 }, { deep: true });
 const onSelectItem = (lineItem) => {
   if (lineItem.selectedItem) {
-    lineItem.unitPrice = lineItem.selectedItem.price;
-    lineItem.unit = lineItem.selectedItem.unit;
-    lineItem.availableStock = lineItem.selectedItem.stock;
+    // Item selected for invoice line (production: no console)
+    lineItem.unitPrice = lineItem.selectedItem.price || 0;
+    lineItem.unit = lineItem.selectedItem.unit || '';
+    lineItem.availableStock = lineItem.selectedItem.stock || 0;
+    // Store the inventory ID for API submission
+    lineItem.inventory_id = lineItem.selectedItem.id;
     validateStock(lineItem);
   }
 };
@@ -71,7 +83,7 @@ const subtotal = computed(() => {
 const taxAmount = computed(() => newInvoice.value.taxEnabled ? subtotal.value * taxRate : 0);
 const grandTotal = computed(() => (subtotal.value - (newInvoice.value.discount || 0)) + taxAmount.value);
 const sisaTagihan = computed(() => grandTotal.value - (newInvoice.value.dp || 0));
-const addItemRow = () => { newInvoice.value.items.push({ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '' }); };
+const addItemRow = () => { newInvoice.value.items.push({ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '', inventory_id: null }); };
 const removeItemRow = (index) => { newInvoice.value.items.splice(index, 1); };
 const setDueDate = (days) => {
   const date = new Date(newInvoice.value.issueDate);
@@ -79,8 +91,36 @@ const setDueDate = (days) => {
   newInvoice.value.dueDate = date.toISOString().substr(0, 10);
 };
 const handleSubmit = () => {
+  // Validate that all items have selectedItem
+  const invalidItems = newInvoice.value.items.filter(item => !item.selectedItem);
+  if (invalidItems.length > 0) {
+    alert('Mohon pilih item untuk semua baris sebelum menyimpan invoice.');
+    return;
+  }
+
+  // Validate quantities and prices
+  const invalidQuantities = newInvoice.value.items.filter(item => !item.quantity || item.quantity <= 0);
+  if (invalidQuantities.length > 0) {
+    alert('Mohon masukkan quantity yang valid untuk semua item.');
+    return;
+  }
+
+  const invalidPrices = newInvoice.value.items.filter(item => !item.unitPrice || item.unitPrice <= 0);
+  if (invalidPrices.length > 0) {
+    alert('Mohon pastikan harga untuk semua item sudah terisi dengan benar.');
+    return;
+  }
+
+  // Transform items to API format
+  const transformedItems = newInvoice.value.items.map(item => ({
+    inventory_id: parseInt(item.selectedItem.id),
+    quantity: parseFloat(item.quantity),
+    price: parseFloat(item.unitPrice)
+  }));
+
   const invoiceData = {
     ...newInvoice.value,
+    items: transformedItems,
     subtotal: subtotal.value,
     taxAmount: taxAmount.value,
     totalAmount: grandTotal.value,
@@ -165,36 +205,47 @@ const handleSubmit = () => {
                       <div class="col-span-12 md:col-span-4">
                            <!-- ## PERUBAHAN UTAMA ADA DI SINI ## -->
                            <v-select
-                             :options="inventoryItems" 
+                             :options="inventoryItems || []"
                              v-model="item.selectedItem"
                              @update:modelValue="onSelectItem(item)"
-                             placeholder="Cari item berdasarkan kode atau nama..."
+                             :placeholder="(inventoryItems && inventoryItems.length > 0) ? 'Cari item berdasarkan kode atau nama...' : 'Memuat data inventory...'"
+                             label="name"
+                             :reduce="item => item"
+                             :filter-by="['code', 'name']"
+                             :disabled="!inventoryItems || inventoryItems.length === 0"
+
                            >
                             <!-- Kustomisasi tampilan setiap opsi di dropdown -->
-                            <template #option="{ code, name, stock }">
+                            <template #option="option">
                                 <div class="flex justify-between">
                                     <span>
-                                        <span class="font-bold">{{ code }}</span> - {{ name }}
+                                        <span class="font-bold">{{ option.code }}</span> - {{ option.name }}
                                     </span>
-                                    <span class="text-xs text-gray-500">Stok: {{ stock }}</span>
+                                    <span class="text-xs text-gray-500">Stok: {{ option.stock }}</span>
                                 </div>
                             </template>
                             <!-- Kustomisasi tampilan item yang sudah terpilih -->
-                            <template #selected-option="{ code, name }">
-                                <span><span class="font-semibold">{{ code }}</span> - {{ name }}</span>
+                            <template #selected-option="option">
+                                <span><span class="font-semibold">{{ option.code }}</span> - {{ option.name }}</span>
+                            </template>
+                            <!-- Template untuk menampilkan pesan ketika tidak ada opsi -->
+                            <template #no-options>
+                                <div class="text-gray-500 text-sm p-2">
+                                    {{ (!inventoryItems || inventoryItems.length === 0) ? 'Data inventory sedang dimuat...' : 'Tidak ada item yang ditemukan' }}
+                                </div>
                             </template>
                            </v-select>
                       </div>
                       <div class="col-span-6 md:col-span-2">
                        <div class="flex items-center">
-                           <input v-model.number="item.quantity" type="number" step="any" placeholder="Jml" 
+                           <input v-model.number="item.quantity" type="number" step="any" placeholder="Jml" min="0.01"
                                   :class="item.error ? 'border-red-500' : 'border-gray-200'"
                                   class="w-full px-3 py-2 bg-white border rounded-lg">
                            <span class="ml-2 text-sm text-gray-500 flex-shrink-0">{{ item.unit }}</span>
                        </div>
                       </div>
                       <div class="col-span-6 md:col-span-3">
-                       <input v-model.number="item.unitPrice" type="number" placeholder="Harga" class="w-full px-3 py-2 bg-white border-gray-200 border rounded-lg">
+                       <input v-model.number="item.unitPrice" type="number" placeholder="Harga" min="0" class="w-full px-3 py-2 bg-white border-gray-200 border rounded-lg">
                       </div>
                       <div class="col-span-12 md:col-span-2 flex items-end">
                          <p class="text-right font-semibold text-gray-800 pr-2 w-full">Rp {{ (item.total || 0).toLocaleString('id-ID') }}</p>
@@ -255,5 +306,8 @@ const handleSubmit = () => {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
+.vs--error .vs__dropdown-toggle {
+  border-color: #ef4444 !important;
+  background-color: #fef2f2 !important;
+}
 </style>
-

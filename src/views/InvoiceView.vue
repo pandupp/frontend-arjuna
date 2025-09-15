@@ -37,15 +37,19 @@ const fetchInvoices = async () => {
     // Meminta data ke "jembatan", bukan langsung ke store
     viewInvoices.value = await invoiceService.getAll();
   } catch (error) {
-    console.error("Gagal memuat data invoice di komponen:", error);
     // Di sini bisa ditambahkan notifikasi error untuk pengguna
   } finally {
     isLoading.value = false;
   }
 };
 
-// Panggil fungsi fetchInvoices saat komponen pertama kali dimuat
-onMounted(fetchInvoices);
+// Panggil fungsi fetchInvoices dan fetchInventory saat komponen pertama kali dimuat
+onMounted(async () => {
+  await Promise.all([
+    fetchInvoices(),
+    inventoryStore.fetchAllItems()
+  ]);
+});
 
 // ## PERUBAHAN 5: Ubah 'handleSaveInvoice' menjadi async dan gunakan service ##
 const handleSaveInvoice = async (newInvoiceData) => {
@@ -53,16 +57,16 @@ const handleSaveInvoice = async (newInvoiceData) => {
     // Kirim data ke "jembatan"
     await invoiceService.create(newInvoiceData);
     // Jika berhasil, ambil kembali daftar invoice terbaru untuk me-refresh tampilan
-    await fetchInvoices(); 
+    await fetchInvoices();
   } catch (error) {
-     console.error("Gagal menyimpan invoice:", error);
+    // TODO: Tambahkan notifikasi error untuk pengguna jika diperlukan
   }
 };
 
-// Sisa fungsi (delete, update, dll.) bisa diubah dengan pola yang sama nanti
-const deleteInvoice = (invoiceId) => {
+// ## PERUBAHAN 7: Ubah deleteInvoice untuk menggunakan service dan refresh data ##
+const deleteInvoice = async (invoiceId) => {
     openMenuId.value = null;
-    Swal.fire({
+    const result = await Swal.fire({
         title: 'Anda Yakin?',
         text: "Invoice yang dihapus tidak bisa dikembalikan!",
         icon: 'warning',
@@ -71,34 +75,58 @@ const deleteInvoice = (invoiceId) => {
         cancelButtonColor: '#6b7280',
         confirmButtonText: 'Ya, hapus!',
         cancelButtonText: 'Batal'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            // TODO: Ubah ini untuk menggunakan invoiceService.delete(invoiceId)
-            invoiceStore.deleteInvoice(invoiceId);
-            Swal.fire('Dihapus!', 'Invoice telah berhasil dihapus.', 'success');
-        }
     });
+
+    if (result.isConfirmed) {
+        try {
+            // Gunakan invoiceService.delete untuk menghapus
+            await invoiceService.delete(invoiceId);
+            // Refresh data setelah berhasil menghapus
+            await fetchInvoices();
+            Swal.fire('Dihapus!', 'Invoice telah berhasil dihapus.', 'success');
+        } catch (error) {
+            Swal.fire('Error!', 'Gagal menghapus invoice. Silakan coba lagi.', 'error');
+        }
+    }
 };
 
-const markAsPaid = (invoiceId) => {
-    // TODO: Ubah ini untuk menggunakan invoiceService.updateStatus(invoiceId, 'Lunas')
-    invoiceStore.markInvoiceAsPaid(invoiceId);
-    openMenuId.value = null;
+const markAsPaid = async (invoiceId) => {
+    try {
+        // ## PERUBAHAN 8: Gunakan invoiceService.updateStatus ##
+        await invoiceService.updateStatus(invoiceId, 'Lunas');
+        // Refresh data setelah update
+        await fetchInvoices();
+        openMenuId.value = null;
+    } catch (error) {
+        // TODO: Tambahkan notifikasi error jika diperlukan
+    }
 }
 
-const handleUpdateInvoice = (updatedInvoice) => {
-    // TODO: Ubah ini untuk menggunakan invoiceService.update(updatedInvoice.id, updatedInvoice)
-    invoiceStore.updateInvoice(updatedInvoice);
+const handleUpdateInvoice = async (updatedInvoice) => {
+    try {
+        // ## PERUBAHAN 9: Gunakan invoiceService.update ##
+        await invoiceService.update(updatedInvoice.id, updatedInvoice);
+        // Refresh data setelah update
+        await fetchInvoices();
+    } catch (error) {
+        // TODO: Tambahkan notifikasi error jika diperlukan
+    }
 }
 
 // Fungsi-fungsi UI tidak perlu diubah
-const printInvoice = (invoice) => {
-    invoiceToPrint.value = invoice;
+const printInvoice = async (invoice) => {
+    // Ambil data terbaru dari backend
+    const freshInvoice = await invoiceService.getById(invoice.id);
+    invoiceToPrint.value = freshInvoice;
     setTimeout(() => {
         window.print();
         invoiceToPrint.value = null;
     }, 100);
     openMenuId.value = null;
+};
+
+const handlePrintInvoice = async (invoice) => {
+    await printInvoice(invoice);
 };
 const getInvoiceStatus = (status) => {
     switch (status) {
@@ -112,8 +140,36 @@ const openAddModal = () => {
     editingInvoice.value = null;
     isModalOpen.value = true;
 };
-const openEditModal = (invoice) => {
-    editingInvoice.value = JSON.parse(JSON.stringify(invoice));
+const openEditModal = async (invoice) => {
+    // Ambil data invoice terbaru dari backend (atau store jika demo)
+    const freshInvoice = await invoiceService.getById(invoice.id);
+
+    // Mapping field dari backend ke struktur form modal
+    const mappedInvoice = {
+      id: freshInvoice.id,
+      customerName: freshInvoice.customer_name,
+      invoiceNumber: freshInvoice.invoice_number,
+      issueDate: freshInvoice.issue_date?.substr(0, 10) || '', // format YYYY-MM-DD
+      dueDate: freshInvoice.due_date || '',
+      dueDateEnabled: !!freshInvoice.due_date,
+      source: freshInvoice.source,
+      status: freshInvoice.status,
+      discount: parseFloat(freshInvoice.discount ?? 0),
+      taxEnabled: !!freshInvoice.tax_enabled,
+      dp: 0, // default jika tidak ada
+      items: (freshInvoice.items || []).map(item => ({
+        inventory_id: item.inventory_id,
+        quantity: item.quantity,
+        unitPrice: parseFloat(item.price),
+        total: parseFloat(item.sub_total),
+        selectedItem: null, // bisa diisi dari inventoryItems jika perlu
+        unit: '', // isi jika ada info satuan
+        availableStock: 0, // isi jika ada info stok
+        error: '',
+      })),
+    };
+
+    editingInvoice.value = JSON.parse(JSON.stringify(mappedInvoice));
     isModalOpen.value = true;
     openMenuId.value = null;
 };
@@ -136,8 +192,8 @@ const openEditModal = (invoice) => {
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100">
       <div class="p-4 md:p-6 border-b border-gray-100">
-        <input 
-          type="text" 
+        <input
+          type="text"
           placeholder="Cari invoice..."
           class="w-full md:w-1/3 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
         >
@@ -162,10 +218,10 @@ const openEditModal = (invoice) => {
           <tbody class="text-sm">
             <!-- ## PERUBAHAN 6: Ganti 'invoices' menjadi 'viewInvoices' ## -->
             <tr v-for="invoice in viewInvoices" :key="invoice.id" class="border-t border-gray-100 hover:bg-gray-50">
-              <td class="py-4 px-6 font-medium text-gray-900">{{ invoice.invoiceNumber }}</td>
-              <td class="py-4 px-6 text-gray-600">{{ invoice.customerName }}</td>
-              <td class="py-4 px-6 text-gray-600">{{ invoice.issueDate }}</td>
-              <td class="py-4 px-6 font-medium text-gray-900">Rp {{ (invoice.totalAmount || 0).toLocaleString('id-ID') }}</td>
+              <td class="py-4 px-6 font-medium text-gray-900">{{ invoice.invoice_number }}</td>
+              <td class="py-4 px-6 text-gray-600">{{ invoice.customer_name }}</td>
+              <td class="py-4 px-6 text-gray-600">{{ new Date(invoice.issue_date).toLocaleDateString('id-ID') }}</td>
+              <td class="py-4 px-6 font-medium text-gray-900">Rp {{ parseFloat(invoice.grand_total || 0).toLocaleString('id-ID') }}</td>
               <td class="py-4 px-6">
                 <span :class="getInvoiceStatus(invoice.status)" class="inline-flex items-center py-1 px-3 rounded-full text-xs font-semibold">{{ invoice.status }}</span>
               </td>
@@ -182,7 +238,7 @@ const openEditModal = (invoice) => {
                       <a @click.prevent="openEditModal(invoice)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                         Edit
                       </a>
-                      <a @click.prevent="printInvoice(invoice)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      <a @click.prevent="handlePrintInvoice(invoice)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                         Cetak
                       </a>
                       <a v-if="invoice.status !== 'Lunas'" @click.prevent="markAsPaid(invoice.id)" href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
@@ -204,20 +260,19 @@ const openEditModal = (invoice) => {
         </div>
       </div>
     </div>
-    
-    <CreateInvoiceModal 
+
+    <CreateInvoiceModal
       :isOpen="isModalOpen"
       :nextInvoiceNumber="nextInvoiceNumber"
       :invoiceToEdit="editingInvoice"
-      :inventoryItems="inventoryItems" 
+      :inventoryItems="inventoryItems"
       @close="isModalOpen = false"
       @saveInvoice="handleSaveInvoice"
       @updateInvoice="handleUpdateInvoice"
     />
-    
+
     <div v-if="invoiceToPrint" class="hidden print:block">
       <PrintInvoice :invoice="invoiceToPrint" />
     </div>
   </div>
 </template>
-

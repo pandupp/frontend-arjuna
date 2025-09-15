@@ -39,11 +39,14 @@ const formatDate = (dateString) => {
                     <div>
                         <p class="font-semibold text-sm text-gray-500 mb-1">DITAGIHKAN KEPADA</p>
                         <p class="text-base font-bold text-gray-900">{{ invoice.customerName }}</p>
+                        <p class="text-sm text-gray-600 mt-2">Sumber: {{ invoice.source }}</p>
+                        <p class="text-sm text-gray-600 mt-2">Status: <span :class="invoice.status === 'Lunas' ? 'text-green-600' : 'text-red-600'">{{ invoice.status }}</span></p>
                     </div>
                     <div class="text-right">
                         <p class="font-semibold text-sm text-gray-500 mb-1">TANGGAL TERBIT</p>
                         <p class="text-base text-gray-800">{{ formatDate(invoice.issueDate) }}</p>
-                        
+                        <p class="text-sm text-gray-600 mt-2">Dibuat: {{ formatDate(invoice.created_at) }}</p>
+                        <p class="text-sm text-gray-600 mt-2">Diupdate: {{ formatDate(invoice.updated_at) }}</p>
                         <!-- JATUH TEMPO (KONDISIONAL) -->
                         <div v-if="invoice.dueDateEnabled && invoice.dueDate" class="mt-3">
                             <p class="font-semibold text-sm text-gray-500 mb-1">JATUH TEMPO</p>
@@ -65,10 +68,12 @@ const formatDate = (dateString) => {
                         </thead>
                         <tbody class="text-sm">
                             <tr v-for="(item, index) in invoice.items" :key="index" class="border-b border-gray-100">
-                                <td class="py-3 px-4 font-medium">{{ item.description || (item.selectedItem && item.selectedItem.name) }}</td>
+                                <td class="py-3 px-4 font-medium">
+                                    {{ item.description || (item.selectedItem && item.selectedItem.name) || 'ID: ' + item.inventory_id }}
+                                </td>
                                 <td class="py-3 px-4 text-center">{{ item.quantity }}</td>
-                                <td class="py-3 px-4 text-right">{{ formatCurrency(item.unitPrice) }}</td>
-                                <td class="py-3 px-4 text-right font-semibold">{{ formatCurrency(item.total) }}</td>
+                                <td class="py-3 px-4 text-right">{{ formatCurrency(item.unitPrice || item.price) }}</td>
+                                <td class="py-3 px-4 text-right font-semibold">{{ formatCurrency(item.total || item.sub_total) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -80,7 +85,13 @@ const formatDate = (dateString) => {
                         <div class="space-y-2">
                             <div class="flex justify-between items-center">
                                 <span class="text-sm text-gray-600">Subtotal</span>
-                                <span class="text-sm font-medium">{{ formatCurrency(invoice.subtotal || 0) }}</span>
+                                <span class="text-sm font-medium">
+                                    {{ formatCurrency(
+                                        invoice.items && invoice.items.length
+                                            ? invoice.items.reduce((sum, item) => sum + (parseFloat(item.sub_total) || 0), 0)
+                                            : 0
+                                    ) }}
+                                </span>
                             </div>
                             <div class="flex justify-between items-center">
                                 <span class="text-sm text-gray-600">Diskon</span>
@@ -92,7 +103,7 @@ const formatDate = (dateString) => {
                             </div>
                             <div class="flex justify-between items-center border-t pt-2 mt-2">
                                 <span class="text-sm font-bold">Grand Total</span>
-                                <span class="text-sm font-bold">{{ formatCurrency(invoice.totalAmount || 0) }}</span>
+                                <span class="text-sm font-bold">{{ formatCurrency(invoice.grand_total || invoice.totalAmount || 0) }}</span>
                             </div>
                             <div class="flex justify-between items-center">
                                 <span class="text-sm text-gray-600">Uang Muka (DP)</span>
@@ -100,7 +111,11 @@ const formatDate = (dateString) => {
                             </div>
                             <div class="flex justify-between items-center border-t-2 border-blue-600 pt-2 mt-2">
                                 <span class="text-base font-bold text-blue-600">SISA TAGIHAN</span>
-                                <span class="text-base font-bold text-blue-600">{{ formatCurrency(invoice.sisaTagihan || 0) }}</span>
+                                <span class="text-base font-bold text-blue-600">
+                                    {{ formatCurrency(
+                                        (parseFloat(invoice.grand_total || 0) - parseFloat(invoice.dp || 0)) || 0
+                                    ) }}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -122,7 +137,7 @@ const formatDate = (dateString) => {
                     </div>
                 </div>
             </div>
-            
+
             <!-- Footer -->
             <div class="p-6 bg-gray-50 rounded-b-lg text-center">
                 <p class="text-sm font-semibold text-gray-700">Terima kasih atas kepercayaan Anda!</p>

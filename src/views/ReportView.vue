@@ -1,137 +1,31 @@
 <script setup>
-import { ref, computed } from 'vue';
-import { storeToRefs } from 'pinia';
-
-// ## PERUBAHAN 1: Impor store Pinia, hapus impor lama ##
-import { useInvoiceStore } from '../stores/invoice';
-
-// Komponen chart tetap sama
+import { ref, computed, onMounted, watch } from 'vue';
 import BarChart from '../components/charts/BarChart.vue';
 import DoughnutChart from '../components/charts/DoughnutChart.vue';
-
-// ## PERUBAHAN 2: Buat instance dari invoice store ##
-const invoiceStore = useInvoiceStore();
-
-// ## PERUBAHAN 3: Ambil state 'invoices' secara reaktif ##
-const { invoices } = storeToRefs(invoiceStore);
+import { statisticsService } from '../services/statisticsService';
 
 // State lokal untuk UI, tidak ada perubahan
 const selectedPeriod = ref('thisMonth');
+const report = ref(null);
+const isLoading = ref(true);
+
+const fetchReport = async () => {
+  isLoading.value = true;
+  report.value = await statisticsService.getReport(selectedPeriod.value);
+  isLoading.value = false;
+};
+
+onMounted(fetchReport);
+watch(selectedPeriod, fetchReport);
 
 // --- SEMUA LOGIKA COMPUTED ANDA DI BAWAH INI TIDAK PERLU DIUBAH ---
 // Karena `invoices` dari storeToRefs sudah reaktif, semua computed property
 // yang bergantung padanya akan otomatis bekerja.
 
-const filteredInvoices = computed(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    if (selectedPeriod.value === 'thisMonth') {
-        return invoices.value.filter(inv => {
-            const invDate = new Date(inv.issueDate);
-            return invDate.getMonth() === currentMonth && invDate.getFullYear() === currentYear;
-        });
-    }
-    
-    if (selectedPeriod.value === 'lastMonth') {
-        const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-        const yearOfLastMonth = currentMonth === 0 ? currentYear - 1 : currentYear;
-        return invoices.value.filter(inv => {
-            const invDate = new Date(inv.issueDate);
-            return invDate.getMonth() === lastMonth && invDate.getFullYear() === yearOfLastMonth;
-        });
-    }
-
-    if (selectedPeriod.value === 'thisYear') {
-        return invoices.value.filter(inv => {
-            const invDate = new Date(inv.issueDate);
-            return invDate.getFullYear() === currentYear;
-        });
-    }
-
-    return invoices.value;
-});
-
-const totalPendapatan = computed(() =>
-    filteredInvoices.value
-        .filter(inv => inv.status === 'Lunas')
-        .reduce((sum, inv) => sum + inv.totalAmount, 0)
-);
-
-const totalPiutang = computed(() =>
-    filteredInvoices.value
-        .filter(inv => inv.status === 'Tertunda')
-        .reduce((sum, inv) => sum + (inv.totalAmount - (inv.dp || 0)), 0)
-);
-
-const produkTerlaris = computed(() => {
-    if (filteredInvoices.value.length === 0) return 'Tidak ada data';
-    
-    const productSales = {};
-    filteredInvoices.value.forEach(inv => {
-        inv.items?.forEach(item => {
-            const name = item.selectedItem?.name || 'Produk Dihapus';
-            if (!productSales[name]) {
-                productSales[name] = 0;
-            }
-            productSales[name] += item.total;
-        });
-    });
-
-    if (Object.keys(productSales).length === 0) return 'Tidak ada penjualan';
-
-    return Object.entries(productSales).sort((a, b) => b[1] - a[1])[0][0];
-});
-
-const chartDataPendapatan = computed(() => {
-    const weeklyRevenue = [0, 0, 0, 0];
-    filteredInvoices.value
-      .filter(i => i.status === 'Lunas')
-      .forEach(inv => {
-        const dayOfMonth = new Date(inv.issueDate).getDate();
-        if (dayOfMonth <= 7) weeklyRevenue[0] += inv.totalAmount;
-        else if (dayOfMonth <= 14) weeklyRevenue[1] += inv.totalAmount;
-        else if (dayOfMonth <= 21) weeklyRevenue[2] += inv.totalAmount;
-        else weeklyRevenue[3] += inv.totalAmount;
-      });
-    return {
-        labels: ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'],
-        datasets: [{
-            label: 'Pendapatan (Rp)',
-            backgroundColor: '#BF202F',
-            borderRadius: 6,
-            data: weeklyRevenue,
-        }],
-    };
-});
-
-const chartDataProduk = computed(() => {
-    const productSales = {};
-    filteredInvoices.value.forEach(inv => {
-        inv.items?.forEach(item => {
-            const name = item.selectedItem?.name || 'Produk Dihapus';
-             if (!productSales[name]) {
-                productSales[name] = 0;
-            }
-            productSales[name] += item.quantity;
-        });
-    });
-    const sortedProducts = Object.entries(productSales).sort((a,b) => b[1] - a[1]).slice(0, 4);
-    return {
-        labels: sortedProducts.map(p => p[0]),
-        datasets: [{
-            backgroundColor: ['#E84D43', '#3B82F6', '#10B981', '#F59E0B'],
-            data: sortedProducts.map(p => p[1])
-        }]
-    };
-});
-
 const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
 
-// ## PERUBAHAN 4: Tambahkan fungsi ekspor CSV ##
 const exportReportToCSV = () => {
-    const dataToExport = filteredInvoices.value;
+    const dataToExport = report.value?.invoices || [];
     if (dataToExport.length === 0) {
         alert("Tidak ada data untuk diekspor pada periode ini.");
         return;
@@ -144,10 +38,10 @@ const exportReportToCSV = () => {
 
     for (const invoice of dataToExport) {
         const values = [
-            invoice.invoiceNumber,
-            `"${invoice.customerName.replace(/"/g, '""')}"`, // Handle koma di nama
-            invoice.issueDate,
-            invoice.totalAmount,
+            invoice.invoice_number,
+            `"${invoice.customer_name.replace(/"/g, '""')}"`,
+            invoice.issue_date,
+            invoice.total_amount,
             invoice.status,
             invoice.dp || 0
         ];
@@ -188,37 +82,53 @@ const exportReportToCSV = () => {
             </button>
         </div>
 
-        <!-- Kartu Statistik -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <p class="text-sm text-gray-500">Total Pendapatan (Lunas)</p>
-                <p class="text-3xl font-bold text-green-600 mt-2">{{ formatCurrency(totalPendapatan) }}</p>
-            </div>
-            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <p class="text-sm text-gray-500">Total Piutang (Tertunda)</p>
-                <p class="text-3xl font-bold text-yellow-600 mt-2">{{ formatCurrency(totalPiutang) }}</p>
-            </div>
-            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <p class="text-sm text-gray-500">Produk Terlaris</p>
-                <p class="text-2xl font-bold text-gray-800 mt-2">{{ produkTerlaris }}</p>
-            </div>
-        </div>
-
-        <!-- Grafik -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <h3 class="font-semibold text-gray-800 mb-4">Tren Pendapatan</h3>
-                <div class="relative h-80">
-                    <BarChart :chart-data="chartDataPendapatan" />
+        <div v-if="isLoading" class="text-center p-10 text-gray-500">Memuat data laporan...</div>
+        <div v-else>
+            <!-- Kartu Statistik -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <p class="text-sm text-gray-500">Total Pendapatan (Lunas)</p>
+                    <p class="text-3xl font-bold text-green-600 mt-2">{{ formatCurrency(report.total_income || 0) }}</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <p class="text-sm text-gray-500">Total Piutang (Tertunda)</p>
+                    <p class="text-3xl font-bold text-yellow-600 mt-2">{{ formatCurrency(report.total_receivable || 0) }}</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <p class="text-sm text-gray-500">Produk Terlaris</p>
+                    <p class="text-2xl font-bold text-gray-800 mt-2">{{ report.top_product || '-' }}</p>
                 </div>
             </div>
-            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                <h3 class="font-semibold text-gray-800 mb-4">Penjualan per Produk</h3>
-                <div class="relative h-80">
-                    <DoughnutChart :chart-data="chartDataProduk" />
+
+            <!-- Grafik -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 class="font-semibold text-gray-800 mb-4">Tren Pendapatan</h3>
+                    <div class="relative h-80">
+                        <BarChart :chart-data="{
+                            labels: ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'],
+                            datasets: [{
+                                label: 'Pendapatan (Rp)',
+                                backgroundColor: '#BF202F',
+                                borderRadius: 6,
+                                data: report.weekly_income || [0,0,0,0],
+                            }]
+                        }" />
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 class="font-semibold text-gray-800 mb-4">Penjualan per Produk</h3>
+                    <div class="relative h-80">
+                        <DoughnutChart :chart-data="{
+                            labels: (report.product_sales || []).map(p => p.name),
+                            datasets: [{
+                                backgroundColor: ['#E84D43', '#3B82F6', '#10B981', '#F59E0B'],
+                                data: (report.product_sales || []).map(p => p.quantity)
+                            }]
+                        }" />
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </template>
-
