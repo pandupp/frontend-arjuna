@@ -5,34 +5,51 @@ defineProps({
   notifications: Array,
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'markAsRead', 'markAllAsRead']);
 const router = useRouter();
 
 const handleNotificationClick = (notification) => {
   router.push('/inventory');
   emit('close');
 };
+
+const markAsRead = (notification) => {
+  emit('markAsRead', notification);
+};
+
+const markAllAsRead = () => {
+  emit('markAllAsRead');
+};
 </script>
 
 <template>
   <!-- ## DESAIN BARU UNTUK DROPDOWN NOTIFIKASI ## -->
-  <div 
+  <div
     class="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-100 z-20"
     @click.stop
   >
     <!-- Header Dropdown -->
     <div class="p-4 border-b flex justify-between items-center">
       <h3 class="font-semibold text-gray-800">Notifikasi</h3>
-      <span v-if="notifications && notifications.length > 0" class="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">
-        {{ notifications.length }} Baru
-      </span>
+      <div class="flex items-center gap-2">
+        <button
+          v-if="notifications && notifications.length > 0"
+          @click="markAllAsRead"
+          class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+        >
+          Tandai Semua Dibaca
+        </button>
+        <span v-if="notifications && notifications.length > 0" class="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">
+          {{ notifications.length }} Baru
+        </span>
+      </div>
     </div>
 
     <!-- Daftar Notifikasi -->
     <div v-if="notifications && notifications.length > 0" class="max-h-96 overflow-y-auto">
       <ul>
         <li v-for="notif in notifications" :key="notif.id" class="border-b last:border-b-0">
-          <a @click.prevent="handleNotificationClick(notif)" href="#" class="flex items-start p-4 hover:bg-gray-50 transition-colors duration-150">
+          <div class="flex items-start p-4 hover:bg-gray-50 transition-colors duration-150">
             <!-- Ikon Notifikasi -->
             <div class="flex-shrink-0 mr-4 mt-1">
               <div class="h-10 w-10 rounded-full bg-yellow-100 flex items-center justify-center">
@@ -42,19 +59,34 @@ const handleNotificationClick = (notification) => {
               </div>
             </div>
             <!-- Konten Teks Notifikasi -->
-            <div>
+            <div class="flex-grow">
               <p class="font-semibold text-sm text-gray-800">Stok Kritis Menipis</p>
               <p class="text-sm text-gray-600 mt-1">
-                Stok untuk <span class="font-bold text-gray-900">{{ notif.name }}</span> tersisa 
+                Stok untuk <span class="font-bold text-gray-900">{{ notif.name }}</span> tersisa
                 <span class="font-bold text-red-600">{{ notif.stock }} {{ notif.unit }}</span>.
               </p>
               <p class="text-xs text-gray-400 mt-2">Segera pesan ulang.</p>
             </div>
-          </a>
+            <!-- Actions -->
+            <div class="flex flex-col gap-1 ml-2">
+              <button
+                @click="handleNotificationClick(notif)"
+                class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50"
+              >
+                Lihat
+              </button>
+              <button
+                @click="markAsRead(notif)"
+                class="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-100"
+              >
+                Tandai Dibaca
+              </button>
+            </div>
+          </div>
         </li>
       </ul>
     </div>
-    
+
     <!-- Tampilan Jika Tidak Ada Notifikasi -->
     <div v-else class="p-8 text-center text-sm text-gray-500 flex flex-col items-center">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -66,8 +98,7 @@ const handleNotificationClick = (notification) => {
 
     <!-- Footer Dropdown -->
     <div class="p-2 bg-gray-50 rounded-b-xl text-center">
-        <a href="#" @click.prevent class="text-xs text-gray-500 hover:text-gray-800 font-medium">Lihat Semua Notifikasi</a>
+        <a href="#" @click.prevent="router.push('/inventory')" class="text-xs text-gray-500 hover:text-gray-800 font-medium">Lihat Inventory</a>
     </div>
   </div>
 </template>
-

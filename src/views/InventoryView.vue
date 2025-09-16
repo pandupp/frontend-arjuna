@@ -7,20 +7,32 @@ import Swal from 'sweetalert2';
 import { useInventoryStore } from '../stores/inventory';
 import { inventoryService } from '../services/inventoryService';
 
-// Impor komponen modal
+// Impor komponen modal dan pagination
 import AddItemModal from '../components/AddItemModal.vue';
+import PaginationComponent from '../components/ui/PaginationComponent.vue';
 
 // Setup Pinia store
 const inventoryStore = useInventoryStore();
-const { inventoryItems } = storeToRefs(inventoryStore);
+const { inventoryItems, pagination } = storeToRefs(inventoryStore);
 
 // ## BAGIAN 2: LOCAL STATE UNTUK UI ##
 // State untuk loading dan UI lainnya tidak berubah
-const isLoading = ref(true); 
+const isLoading = ref(true);
 const isModalOpen = ref(false);
-const openMenuId = ref(null); 
-const activeItem = ref(null); 
+const openMenuId = ref(null);
+const activeItem = ref(null);
 const searchQuery = ref('');
+const currentPage = ref(1);
+const perPage = ref(10);
+const isPaginationLoading = ref(false);
+
+// Options untuk per page selector
+const perPageOptions = [
+  { value: 5, label: '5 per halaman' },
+  { value: 10, label: '10 per halaman' },
+  { value: 25, label: '25 per halaman' },
+  { value: 50, label: '50 per halaman' }
+];
 
 // ## BAGIAN 3: LOGIKA TAMPILAN (COMPUTED & HELPERS) ##
 // Tidak ada perubahan di sini
@@ -33,28 +45,63 @@ const getStockStatus = (stock) => {
 const filteredItems = computed(() => {
   if (!searchQuery.value) return inventoryItems.value;
   const query = searchQuery.value.toLowerCase();
-  return inventoryItems.value.filter(item => 
+  return inventoryItems.value.filter(item =>
     item.name.toLowerCase().includes(query) ||
     item.code.toLowerCase().includes(query)
   );
 });
 
+// Computed untuk menghitung nomor urut berdasarkan pagination
+const getRowNumber = (index) => {
+  if (searchQuery.value) {
+    // Jika sedang searching, gunakan nomor urut biasa
+    return index + 1;
+  }
+  // Jika tidak searching, gunakan nomor berdasarkan pagination
+  const from = pagination.value.from || 1;
+  return from + index;
+};
+
 // ## BAGIAN 4: FUNGSI-FUNGSI UTAMA ##
 
 // ## PERUBAHAN UTAMA DI SINI ##
 // Panggil action `fetchAllItems` dari store saat komponen dimuat
-onMounted(async () => {
-  isLoading.value = true;
+const loadInventoryData = async (page = 1, showPaginationLoading = false) => {
+  if (showPaginationLoading) {
+    isPaginationLoading.value = true;
+  } else {
+    isLoading.value = true;
+  }
+
   try {
-    // Langsung panggil action dari store. Store yang akan menentukan
-    // apakah akan memakai data dummy atau memanggil service.
-    await inventoryStore.fetchAllItems();
+    // Langsung panggil action dari store dengan parameter pagination
+    await inventoryStore.fetchAllItems(page, perPage.value);
+    currentPage.value = page;
   } catch (error) {
     // Penanganan error jika action-nya sendiri gagal
     Swal.fire('Error', 'Terjadi kesalahan saat mengambil data.', 'error');
   } finally {
-    isLoading.value = false;
+    if (showPaginationLoading) {
+      isPaginationLoading.value = false;
+    } else {
+      isLoading.value = false;
+    }
   }
+};
+
+// Handle page change dari pagination component
+const handlePageChange = (page) => {
+  loadInventoryData(page, true);
+};
+
+// Handle per page change
+const handlePerPageChange = async () => {
+  currentPage.value = 1; // Reset ke halaman pertama
+  await loadInventoryData(1, true);
+};
+
+onMounted(async () => {
+  await loadInventoryData(1);
 });
 
 // Fungsi untuk membuka modal (tidak berubah)
@@ -68,12 +115,13 @@ const openEditModal = (item) => {
   openMenuId.value = null;
 };
 
-// Fungsi CRUD tetap memanggil service terlebih dahulu, lalu store (tidak berubah)
+// Fungsi CRUD yang refresh data setelah operasi
 async function handleAddItem(newItem) {
   try {
     const createdItem = await inventoryService.create(newItem);
-    inventoryStore.addNewItem(createdItem);
     isModalOpen.value = false;
+    // Refresh data di halaman pertama untuk melihat item baru
+    await loadInventoryData(1);
     Swal.fire('Berhasil!', 'Item baru telah ditambahkan.', 'success');
   } catch (error) {
     Swal.fire('Gagal', 'Tidak dapat menambahkan item baru.', 'error');
@@ -83,8 +131,9 @@ async function handleAddItem(newItem) {
 async function handleUpdateItem(updatedItem) {
   try {
     const returnedItem = await inventoryService.update(updatedItem.id, updatedItem);
-    inventoryStore.updateItem(returnedItem);
     isModalOpen.value = false;
+    // Refresh data di halaman saat ini
+    await loadInventoryData(currentPage.value);
     Swal.fire('Berhasil!', 'Item telah berhasil diperbarui.', 'success');
   } catch (error) {
     Swal.fire('Gagal', 'Tidak dapat memperbarui item.', 'error');
@@ -106,7 +155,15 @@ function deleteItem(itemId) {
     if (result.isConfirmed) {
       try {
         await inventoryService.delete(itemId);
-        inventoryStore.deleteItem(itemId);
+        // Refresh data dan cek apakah perlu ke halaman sebelumnya
+        const itemsOnCurrentPage = pagination.value.to - pagination.value.from + 1;
+        const shouldGoToPreviousPage =
+          currentPage.value > 1 &&
+          itemsOnCurrentPage === 1; // Jika ini adalah item terakhir di halaman ini
+
+        const targetPage = shouldGoToPreviousPage ? currentPage.value - 1 : currentPage.value;
+        await loadInventoryData(targetPage, true);
+
         Swal.fire('Dihapus!', 'Item Anda telah berhasil dihapus.', 'success');
       } catch (error) {
         Swal.fire('Gagal', 'Item tidak dapat dihapus dari server.', 'error');
@@ -118,14 +175,17 @@ function deleteItem(itemId) {
 
 <template>
   <div class="relative" @click="openMenuId = null">
-    <!-- Bagian Search Bar (Tidak Berubah) -->
-    <div class="mb-6">
-      <input 
+    <!-- Bagian Search Bar -->
+    <div class="mb-6 flex flex-col md:flex-row gap-3 md:items-center">
+      <input
         v-model="searchQuery"
-        type="text" 
+        type="text"
         placeholder="Cari berdasarkan nama, kode..."
-        class="w-full md:w-1/3 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-shadow"
+        class="w-full md:w-80 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-shadow"
       >
+      <div v-if="searchQuery" class="text-sm text-gray-500">
+        Ditemukan {{ filteredItems.length }} hasil pencarian
+      </div>
     </div>
 
     <!-- Tampilkan pesan loading jika isLoading === true -->
@@ -138,7 +198,16 @@ function deleteItem(itemId) {
       <div class="overflow-x-auto">
         <!-- Tampilkan pesan jika data kosong setelah loading -->
         <div v-if="!filteredItems.length" class="text-center py-16">
+          <div v-if="searchQuery">
+            <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <p class="text-gray-500 text-lg">Tidak ada data yang cocok dengan pencarian "<span class="font-semibold">{{ searchQuery }}</span>"</p>
+            <p class="text-gray-400 text-sm mt-2">Coba gunakan kata kunci yang berbeda</p>
+          </div>
+          <div v-else>
             <p class="text-gray-500 text-lg">Belum ada data inventaris.</p>
+          </div>
         </div>
         <!-- Tampilkan tabel jika ada data -->
         <table v-else class="w-full text-left">
@@ -155,7 +224,7 @@ function deleteItem(itemId) {
           </thead>
           <tbody class="text-sm">
             <tr v-for="(item, index) in filteredItems" :key="item.id" class="border-b border-gray-200 hover:bg-gray-50/50">
-              <td class="py-5 px-6 text-gray-500">{{ index + 1 }}</td>
+              <td class="py-5 px-6 text-gray-500">{{ getRowNumber(index) }}</td>
               <td class="py-5 px-6 font-medium text-gray-900">{{ item.code }}</td>
               <td class="py-5 px-6 text-gray-600">{{ item.name }}</td>
               <td class="py-5 px-6 text-gray-600">{{ item.unit }}</td>
@@ -196,11 +265,35 @@ function deleteItem(itemId) {
           </tbody>
         </table>
       </div>
+
+      <!-- Pagination Component -->
+      <div v-if="!searchQuery && pagination.total > 0" class="relative">
+        <!-- Loading overlay untuk pagination -->
+        <div v-if="isPaginationLoading" class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+          <div class="flex items-center space-x-2">
+            <svg class="animate-spin h-5 w-5 text-[#E84D43]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-sm text-gray-600">Memuat...</span>
+          </div>
+        </div>
+
+        <PaginationComponent
+          :currentPage="pagination.current_page"
+          :lastPage="pagination.last_page"
+          :total="pagination.total"
+          :perPage="pagination.per_page"
+          :from="pagination.from"
+          :to="pagination.to"
+          @page-change="handlePageChange"
+        />
+      </div>
     </div>
-    
+
     <!-- Modal dan Floating Action Button (Tidak Berubah) -->
-    <AddItemModal 
-      :isOpen="isModalOpen" 
+    <AddItemModal
+      :isOpen="isModalOpen"
       :itemData="activeItem"
       @close="isModalOpen = false"
       @addItem="handleAddItem"
@@ -212,4 +305,3 @@ function deleteItem(itemId) {
     </button>
   </div>
 </template>
-

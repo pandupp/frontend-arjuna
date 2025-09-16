@@ -111,6 +111,61 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
+  async function updateUser(userId, userData) {
+    if (import.meta.env.VITE_MOCK_API === "true") {
+      const userIndex = users.value.findIndex((user) => user.id === userId);
+      if (userIndex !== -1) {
+        users.value[userIndex] = { ...users.value[userIndex], ...userData };
+        // Update dummy data juga
+        const dummyIndex = DUMMY_USER_DATA.findIndex(
+          (user) => user.id === userId,
+        );
+        if (dummyIndex !== -1) {
+          DUMMY_USER_DATA[dummyIndex] = {
+            ...DUMMY_USER_DATA[dummyIndex],
+            ...userData,
+          };
+        }
+        return users.value[userIndex];
+      }
+      return null;
+    }
+
+    // Mode produksi: update ke backend
+    try {
+      const payload = {
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+      };
+
+      // Hanya tambahkan password jika ada
+      if (userData.password) {
+        payload.password = userData.password;
+      }
+      const updatedUserResponse = await userService.update(userId, payload);
+
+      // Update data di local state
+      const userIndex = users.value.findIndex((user) => user.id === userId);
+      if (userIndex !== -1) {
+        if (
+          updatedUserResponse &&
+          updatedUserResponse.status === "success" &&
+          updatedUserResponse.data
+        ) {
+          users.value[userIndex] = updatedUserResponse.data;
+          return updatedUserResponse.data;
+        } else {
+          users.value[userIndex] = { ...users.value[userIndex], ...userData };
+          return users.value[userIndex];
+        }
+      }
+      return updatedUserResponse;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async function deleteUser(userId) {
     if (import.meta.env.VITE_MOCK_API === "true") {
       users.value = users.value.filter((user) => user.id !== userId);
@@ -201,6 +256,7 @@ export const useAuthStore = defineStore("auth", () => {
     userRole,
     fetchAllUsers,
     addUser,
+    updateUser,
     deleteUser,
     login,
     logout,

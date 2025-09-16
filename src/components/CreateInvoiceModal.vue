@@ -10,21 +10,15 @@ const props = defineProps({
   invoiceToEdit: Object,
 });
 
-// Debug logging untuk memeriksa data inventory
-watchEffect(() => {
-  if (props.inventoryItems && Array.isArray(props.inventoryItems)) {
-    // Inventory items loaded for modal (production: no console)
-    // if (props.inventoryItems.length > 0) {
-    //   // Sample item: props.inventoryItems[0]
-    // }
-  }
-});
+
 
 const emit = defineEmits(['close', 'saveInvoice', 'updateInvoice']);
 const isEditMode = computed(() => !!props.invoiceToEdit);
 const createNewInvoiceTemplate = () => ({
   invoiceNumber: '',
   customerName: '',
+  customerPhone: '',
+  description: '',
   issueDate: new Date().toISOString().substr(0, 10),
   dueDateEnabled: false,
   dueDate: '',
@@ -33,16 +27,80 @@ const createNewInvoiceTemplate = () => ({
   discount: 0,
   taxEnabled: false,
   dp: 0,
+  status: 'Tertunda'
 });
 const newInvoice = ref(createNewInvoiceTemplate());
+
+// Helper function to map inventory ID to inventory item
+const findInventoryItem = (inventoryId) => {
+  if (!props.inventoryItems || !Array.isArray(props.inventoryItems)) return null;
+  return props.inventoryItems.find(item => item.id === parseInt(inventoryId));
+};
+
 watchEffect(() => {
   if (props.isOpen) {
-    if (isEditMode.value) {
+    if (isEditMode.value && props.invoiceToEdit) {
+      console.log('=== EDIT MODE DEBUG ===');
+      console.log('Original invoiceToEdit:', props.invoiceToEdit);
+      console.log('Available inventoryItems:', props.inventoryItems);
+
       const invoiceData = JSON.parse(JSON.stringify(props.invoiceToEdit));
-      invoiceData.items = invoiceData.items || [{ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '', inventory_id: null }];
-      invoiceData.dp = invoiceData.dp || 0;
-      invoiceData.dueDateEnabled = invoiceData.dueDateEnabled ?? false;
-      newInvoice.value = invoiceData;
+
+      // Map data from API format to form format
+      const mappedInvoice = {
+        id: invoiceData.id,
+        invoiceNumber: invoiceData.invoice_number || invoiceData.invoiceNumber || '',
+        customerName: invoiceData.customer_name || invoiceData.customerName || '',
+        customerPhone: invoiceData.customer_phone || invoiceData.customerPhone || '',
+        description: invoiceData.description || '',
+        issueDate: invoiceData.issue_date ? invoiceData.issue_date.substr(0, 10) : invoiceData.issueDate || new Date().toISOString().substr(0, 10),
+        dueDateEnabled: !!(invoiceData.due_date || invoiceData.dueDate),
+        dueDate: invoiceData.due_date ? invoiceData.due_date.substr(0, 10) : invoiceData.dueDate || '',
+        source: invoiceData.source || 'Customer Order',
+        discount: parseFloat(invoiceData.discount || 0),
+        taxEnabled: !!(invoiceData.tax_enabled || invoiceData.taxEnabled),
+        dp: parseFloat(invoiceData.down_payment || invoiceData.dp || 0),
+        status: invoiceData.status || 'Tertunda',
+        // Additional fields from API response
+        grand_total: parseFloat(invoiceData.grand_total || 0),
+        remaining_payment: parseFloat(invoiceData.remaining_payment || 0),
+        user_name: invoiceData.user_name || '',
+        created_at: invoiceData.created_at || '',
+        updated_at: invoiceData.updated_at || '',
+        items: []
+      };
+
+      // Map items with proper inventory data
+      if (invoiceData.items && Array.isArray(invoiceData.items)) {
+        console.log('Mapping items:', invoiceData.items);
+        mappedInvoice.items = invoiceData.items.map((item, index) => {
+          console.log(`Processing item ${index}:`, item);
+          const inventoryItem = findInventoryItem(item.inventory_id);
+          console.log(`Found inventory item for ID ${item.inventory_id}:`, inventoryItem);
+
+          const mappedItem = {
+            selectedItem: inventoryItem,
+            quantity: parseFloat(item.quantity || 1),
+            unitPrice: parseFloat(item.price || item.unitPrice || 0),
+            total: parseFloat(item.sub_total || item.total || 0),
+            unit: inventoryItem ? inventoryItem.unit : (item.unit || ''),
+            availableStock: inventoryItem ? inventoryItem.stock : (item.availableStock || 0),
+            error: '',
+            inventory_id: parseInt(item.inventory_id || item.inventory_id)
+          };
+
+          console.log(`Mapped item ${index}:`, mappedItem);
+          return mappedItem;
+        });
+      }
+
+      // Ensure at least one item exists
+      if (mappedInvoice.items.length === 0) {
+        mappedInvoice.items = [{ selectedItem: null, quantity: 1, unitPrice: 0, total: 0, unit: '', availableStock: 0, error: '', inventory_id: null }];
+      }
+
+      console.log('Final mapped invoice:', mappedInvoice);
+      newInvoice.value = mappedInvoice;
     } else {
       newInvoice.value = createNewInvoiceTemplate();
       newInvoice.value.invoiceNumber = props.nextInvoiceNumber;
@@ -57,14 +115,44 @@ watch(() => newInvoice.value.items, (items) => {
         });
     }
 }, { deep: true });
+
+// Watch for dueDateEnabled changes to reset dueDate when unchecked
+watch(() => newInvoice.value.dueDateEnabled, (enabled) => {
+    if (!enabled) {
+        newInvoice.value.dueDate = '';
+    }
+});
 const onSelectItem = (lineItem) => {
+  console.log('=== ITEM SELECTION DEBUG ===');
+  console.log('Selected item:', lineItem.selectedItem);
   if (lineItem.selectedItem) {
-    // Item selected for invoice line (production: no console)
-    lineItem.unitPrice = lineItem.selectedItem.price || 0;
+    console.log('Selected item properties:', {
+      id: lineItem.selectedItem.id,
+      price: lineItem.selectedItem.price,
+      unit: lineItem.selectedItem.unit,
+      stock: lineItem.selectedItem.stock
+    });
+
+    // Only update price if not in edit mode or if price is 0/empty
+    if (!isEditMode.value || !lineItem.unitPrice || lineItem.unitPrice === 0) {
+      lineItem.unitPrice = lineItem.selectedItem.price || 0;
+    }
+
     lineItem.unit = lineItem.selectedItem.unit || '';
     lineItem.availableStock = lineItem.selectedItem.stock || 0;
     // Store the inventory ID for API submission
     lineItem.inventory_id = lineItem.selectedItem.id;
+
+    // Recalculate total
+    lineItem.total = lineItem.quantity * lineItem.unitPrice;
+
+    console.log('Updated line item:', {
+      unitPrice: lineItem.unitPrice,
+      unit: lineItem.unit,
+      availableStock: lineItem.availableStock,
+      inventory_id: lineItem.inventory_id,
+      total: lineItem.total
+    });
     validateStock(lineItem);
   }
 };
@@ -91,9 +179,36 @@ const setDueDate = (days) => {
   newInvoice.value.dueDate = date.toISOString().substr(0, 10);
 };
 const handleSubmit = () => {
+  console.log('=== DEBUG: Starting form submission ===');
+  console.log('Form data:', newInvoice.value);
+
+  // Validate required fields
+  console.log('=== FIELD VALIDATION ===');
+  console.log('Customer name:', newInvoice.value.customerName);
+  console.log('Customer phone:', newInvoice.value.customerPhone);
+  console.log('Description:', newInvoice.value.description);
+  console.log('Source:', newInvoice.value.source);
+  console.log('Due date enabled:', newInvoice.value.dueDateEnabled);
+  console.log('Due date value:', `"${newInvoice.value.dueDate}"`);
+  console.log('Due date type:', typeof newInvoice.value.dueDate);
+
+  if (!newInvoice.value.customerName || newInvoice.value.customerName.trim() === '') {
+    console.error('Customer name is required');
+    alert('Nama pelanggan wajib diisi.');
+    return;
+  }
+
+  // Due date validation: only validate if checkbox is enabled
+  if (newInvoice.value.dueDateEnabled && (!newInvoice.value.dueDate || newInvoice.value.dueDate.trim() === '')) {
+    console.warn('Due date is enabled but empty');
+    alert('Tanggal jatuh tempo wajib diisi jika fitur ini diaktifkan.');
+    return;
+  }
+
   // Validate that all items have selectedItem
   const invalidItems = newInvoice.value.items.filter(item => !item.selectedItem);
   if (invalidItems.length > 0) {
+    console.error('Invalid items (no selectedItem):', invalidItems);
     alert('Mohon pilih item untuk semua baris sebelum menyimpan invoice.');
     return;
   }
@@ -101,13 +216,23 @@ const handleSubmit = () => {
   // Validate quantities and prices
   const invalidQuantities = newInvoice.value.items.filter(item => !item.quantity || item.quantity <= 0);
   if (invalidQuantities.length > 0) {
+    console.error('Invalid quantities:', invalidQuantities);
     alert('Mohon masukkan quantity yang valid untuk semua item.');
     return;
   }
 
   const invalidPrices = newInvoice.value.items.filter(item => !item.unitPrice || item.unitPrice <= 0);
   if (invalidPrices.length > 0) {
+    console.error('Invalid prices:', invalidPrices);
     alert('Mohon pastikan harga untuk semua item sudah terisi dengan benar.');
+    return;
+  }
+
+  // Validate inventory_id exists
+  const missingInventoryId = newInvoice.value.items.filter(item => !item.inventory_id);
+  if (missingInventoryId.length > 0) {
+    console.error('Items missing inventory_id:', missingInventoryId);
+    alert('Ada item yang belum memiliki inventory_id. Mohon pilih ulang item.');
     return;
   }
 
@@ -118,18 +243,96 @@ const handleSubmit = () => {
     price: parseFloat(item.unitPrice)
   }));
 
+  console.log('Transformed items:', transformedItems);
+
+  // Prepare due_date with proper validation
+  let dueDate = null;
+  if (newInvoice.value.dueDateEnabled && newInvoice.value.dueDate && newInvoice.value.dueDate.trim() !== '') {
+    dueDate = newInvoice.value.dueDate;
+  }
+
+  // Create API-compatible data structure
   const invoiceData = {
-    ...newInvoice.value,
+    customer_name: newInvoice.value.customerName,
+    customer_phone: newInvoice.value.customerPhone,
+    description: newInvoice.value.description,
+    source: newInvoice.value.source,
+    status: sisaTagihan.value <= 0 ? 'Lunas' : 'Tertunda',
+    discount: parseFloat(newInvoice.value.discount) || 0,
+    down_payment: parseFloat(newInvoice.value.dp) || 0,
+    tax_enabled: newInvoice.value.taxEnabled,
     items: transformedItems,
+    // Keep additional data for internal use
+    invoiceNumber: newInvoice.value.invoiceNumber,
     subtotal: subtotal.value,
     taxAmount: taxAmount.value,
     totalAmount: grandTotal.value,
     sisaTagihan: sisaTagihan.value
   };
-  if (isEditMode.value) {
-    emit('updateInvoice', invoiceData);
+
+  // Only add due_date if it has a valid value
+  if (dueDate) {
+    invoiceData.due_date = dueDate;
+  }
+
+  console.log('=== FINAL INVOICE DATA TO BE SENT ===');
+  console.log('Due date debug:');
+  console.log('- dueDateEnabled:', newInvoice.value.dueDateEnabled);
+  console.log('- dueDate value:', `"${newInvoice.value.dueDate}"`);
+  console.log('- final due_date in payload:', invoiceData.due_date);
+  console.log('- due_date included in payload:', 'due_date' in invoiceData);
+  console.log('Invoice data:', invoiceData);
+  console.log('Invoice data (JSON):', JSON.stringify(invoiceData, null, 2));
+  console.log('Data types:');
+  console.log('- customer_name:', typeof invoiceData.customer_name, `"${invoiceData.customer_name}"`);
+  console.log('- customer_phone:', typeof invoiceData.customer_phone, `"${invoiceData.customer_phone}"`);
+  console.log('- description:', typeof invoiceData.description, `"${invoiceData.description}"`);
+  console.log('- source:', typeof invoiceData.source, `"${invoiceData.source}"`);
+  if ('due_date' in invoiceData) {
+    console.log('- due_date:', typeof invoiceData.due_date, invoiceData.due_date);
   } else {
-    invoiceData.status = sisaTagihan.value <= 0 ? 'Lunas' : 'Tertunda';
+    console.log('- due_date: NOT INCLUDED IN PAYLOAD');
+  }
+  console.log('- status:', typeof invoiceData.status, `"${invoiceData.status}"`);
+  console.log('- discount:', typeof invoiceData.discount, invoiceData.discount);
+  console.log('- down_payment:', typeof invoiceData.down_payment, invoiceData.down_payment);
+  console.log('- tax_enabled:', typeof invoiceData.tax_enabled, invoiceData.tax_enabled);
+  console.log('- items length:', invoiceData.items.length);
+
+  // Validate each item before sending
+  console.log('=== ITEMS VALIDATION ===');
+  invoiceData.items.forEach((item, index) => {
+    console.log(`Item ${index + 1}:`, item);
+    console.log(`- inventory_id: ${typeof item.inventory_id} - ${item.inventory_id} - isNaN: ${isNaN(item.inventory_id)}`);
+    console.log(`- quantity: ${typeof item.quantity} - ${item.quantity} - isNaN: ${isNaN(item.quantity)}`);
+    console.log(`- price: ${typeof item.price} - ${item.price} - isNaN: ${isNaN(item.price)}`);
+
+    if (!item.inventory_id || isNaN(item.inventory_id)) {
+      console.error(`Item ${index + 1} has invalid inventory_id:`, item.inventory_id);
+    }
+    if (!item.quantity || isNaN(item.quantity) || item.quantity <= 0) {
+      console.error(`Item ${index + 1} has invalid quantity:`, item.quantity);
+    }
+    if (!item.price || isNaN(item.price) || item.price <= 0) {
+      console.error(`Item ${index + 1} has invalid price:`, item.price);
+    }
+  });
+
+  // Check for empty or null values
+  console.log('=== NULL/EMPTY CHECK ===');
+  Object.keys(invoiceData).forEach(key => {
+    if (invoiceData[key] === null || invoiceData[key] === undefined || invoiceData[key] === '') {
+      console.warn(`Warning: ${key} is null/undefined/empty:`, invoiceData[key]);
+    }
+  });
+
+  if (isEditMode.value) {
+    console.log('Emitting updateInvoice event with ID:', newInvoice.value.id);
+    // Add invoice ID for update operations
+    const updateData = { ...invoiceData, id: newInvoice.value.id };
+    emit('updateInvoice', updateData);
+  } else {
+    console.log('Emitting saveInvoice event');
     emit('saveInvoice', invoiceData);
   }
   emit('close');
@@ -177,18 +380,49 @@ const handleSubmit = () => {
                 <input v-model="newInvoice.invoiceNumber" type="text" id="invoiceNumber" class="w-full px-4 py-2.5 bg-gray-200 border-gray-300 border rounded-lg cursor-not-allowed" disabled readonly>
               </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 items-end">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div>
+                <label for="customerPhone" class="block text-sm font-medium text-gray-600 mb-2">No. HP Pelanggan</label>
+                <input v-model="newInvoice.customerPhone" type="tel" id="customerPhone" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg" placeholder="081234567890">
+              </div>
+              <div>
+                <label for="description" class="block text-sm font-medium text-gray-600 mb-2">Keterangan</label>
+                <input v-model="newInvoice.description" type="text" id="description" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg" placeholder="Deskripsi pekerjaan atau layanan">
+              </div>
+              <div v-if="isEditMode">
+                <label for="invoiceStatus" class="block text-sm font-medium text-gray-600 mb-2">Status Invoice</label>
+                <select v-model="newInvoice.status" id="invoiceStatus" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg">
+                  <option value="Tertunda">Tertunda</option>
+                  <option value="Lunas">Lunas</option>
+                  <option value="Terlambat">Terlambat</option>
+                  <option value="Dibatalkan">Dibatalkan</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-end">
               <div>
                 <label for="issueDate" class="block text-sm font-medium text-gray-600 mb-2">Tanggal Terbit</label>
                 <input v-model="newInvoice.issueDate" type="date" id="issueDate" class="w-full px-4 py-2.5 bg-gray-50 border-gray-200 border rounded-lg">
+              </div>
+              <div v-if="isEditMode" class="text-sm">
+                <label class="block text-sm font-medium text-gray-600 mb-2">Grand Total</label>
+                <div class="px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 font-semibold">
+                  Rp {{ (newInvoice.grand_total || grandTotal).toLocaleString('id-ID') }}
+                </div>
               </div>
               <div class="flex items-center">
                 <input v-model="newInvoice.dueDateEnabled" type="checkbox" id="dueDateEnabled" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500">
                 <label for="dueDateEnabled" class="ml-2 text-sm font-medium text-gray-600">Tambahkan Tanggal Jatuh Tempo</label>
               </div>
             </div>
-            <div v-if="newInvoice.dueDateEnabled" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div v-if="newInvoice.dueDateEnabled" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 <div></div>
+                <div v-if="isEditMode" class="text-sm">
+                  <label class="block text-sm font-medium text-gray-600 mb-2">Sisa Pembayaran</label>
+                  <div class="px-4 py-2.5 bg-red-50 border border-red-200 rounded-lg text-red-700 font-semibold">
+                    Rp {{ (newInvoice.remaining_payment || sisaTagihan).toLocaleString('id-ID') }}
+                  </div>
+                </div>
                 <div>
                     <label for="dueDate" class="block text-sm font-medium text-gray-600 mb-2">Jatuh Tempo</label>
                     <div class="flex items-center gap-2">
@@ -260,6 +494,25 @@ const handleSubmit = () => {
                </div>
                <button @click="addItemRow" type="button" class="mt-2 text-sm font-semibold text-red-600 hover:text-red-800">+ Tambah Baris</button>
             </div>
+            <!-- Invoice metadata for edit mode -->
+            <div v-if="isEditMode" class="border-t border-gray-200 pt-4">
+              <h4 class="text-sm font-medium text-gray-700 mb-3">Informasi Invoice</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div v-if="newInvoice.user_name">
+                  <span class="text-gray-500">Dibuat oleh:</span>
+                  <span class="font-medium ml-1">{{ newInvoice.user_name }}</span>
+                </div>
+                <div v-if="newInvoice.created_at">
+                  <span class="text-gray-500">Tanggal dibuat:</span>
+                  <span class="font-medium ml-1">{{ new Date(newInvoice.created_at).toLocaleDateString('id-ID') }}</span>
+                </div>
+                <div v-if="newInvoice.updated_at && newInvoice.updated_at !== newInvoice.created_at">
+                  <span class="text-gray-500">Terakhir diupdate:</span>
+                  <span class="font-medium ml-1">{{ new Date(newInvoice.updated_at).toLocaleDateString('id-ID') }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Totals section -->
             <div class="border-t border-gray-200 pt-4 flex justify-end">
               <div class="w-full md:w-1/2 lg:w-1/3 space-y-3">

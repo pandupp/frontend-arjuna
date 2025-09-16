@@ -5,7 +5,7 @@ import Swal from 'sweetalert2';
 
 // 1. Impor store dan komponen modal
 import { useAuthStore } from '../stores/auth';
-import AddUserModal from '../components/AddUserModal.vue'; 
+import AddUserModal from '../components/AddUserModal.vue';
 
 // 2. Inisialisasi store
 const authStore = useAuthStore();
@@ -33,7 +33,17 @@ const openAddModal = () => {
   isModalOpen.value = true;
 };
 
-// 5. Logika simpan dan hapus yang memanggil store
+const openEditModal = (user) => {
+  editingUser.value = user;
+  isModalOpen.value = true;
+};
+
+const closeModal = () => {
+  isModalOpen.value = false;
+  editingUser.value = null;
+};
+
+// 5. Logika simpan, edit, dan hapus yang memanggil store
 async function handleSaveUser(newUserData) {
   try {
     await authStore.addUser(newUserData);
@@ -41,6 +51,17 @@ async function handleSaveUser(newUserData) {
     Swal.fire('Berhasil!', 'User baru telah ditambahkan.', 'success');
   } catch (error) {
     Swal.fire('Gagal', 'Tidak dapat menambahkan user baru.', 'error');
+  }
+};
+
+async function handleUpdateUser(userId, updatedData) {
+  try {
+    await authStore.updateUser(userId, updatedData);
+    isModalOpen.value = false;
+    editingUser.value = null;
+    Swal.fire('Berhasil!', 'Data user telah diperbarui.', 'success');
+  } catch (error) {
+    Swal.fire('Gagal', 'Tidak dapat memperbarui data user.', 'error');
   }
 };
 
@@ -104,7 +125,7 @@ function deleteUser(userId) {
             <td class="py-4 px-6 text-gray-600">{{ user.role }}</td>
             <td class="py-4 px-6">
               <div class="flex items-center space-x-2">
-                <button class="text-blue-600 hover:text-blue-800">
+                <button @click="openEditModal(user)" class="text-blue-600 hover:text-blue-800">
                   <!-- Ikon Edit -->
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
                 </button>
@@ -118,12 +139,14 @@ function deleteUser(userId) {
         </tbody>
       </table>
     </div>
-    
+
     <!-- Panggil komponen modal -->
-    <AddUserModal 
-      :isOpen="isModalOpen" 
-      @close="isModalOpen = false"
+    <AddUserModal
+      :isOpen="isModalOpen"
+      :editUser="editingUser"
+      @close="closeModal"
       @save="handleSaveUser"
+      @update="handleUpdateUser"
     />
   </div>
 </template>

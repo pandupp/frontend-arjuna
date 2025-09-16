@@ -28,15 +28,23 @@ apiClient.interceptors.request.use(
 export const inventoryService = {
   /**
    * Mengambil semua item inventaris dari backend.
+   * @param {number} page - Halaman yang ingin diambil (default: 1)
+   * @param {number} perPage - Jumlah item per halaman (default: 10)
    */
-  async getAll() {
+  async getAll(page = 1, perPage = 10) {
     try {
       // Production: log removed
-      const response = await apiClient.get("/inventory");
-      // API mengembalikan { status, data: [...], message }
-      // Kita perlu mengambil array dari response.data.data dan transform ke format yang diharapkan
+      const response = await apiClient.get("/inventory", {
+        params: {
+          page,
+          per_page: perPage,
+        },
+      });
+      // API mengembalikan { status, data: [...], pagination: {...}, message }
       const inventoryData = response.data.data || [];
-      return inventoryData.map((item) => ({
+      const pagination = response.data.pagination || {};
+
+      const transformedData = inventoryData.map((item) => ({
         id: item.id,
         code: item.kode_inventory,
         name: item.product_name,
@@ -49,9 +57,25 @@ export const inventoryService = {
         created_at: item.created_at,
         updated_at: item.updated_at,
       }));
+
+      return {
+        data: transformedData,
+        pagination: pagination,
+      };
     } catch (error) {
       // TODO: handle error (production: log removed)
-      return []; // Kembalikan array kosong jika gagal
+      return {
+        data: [],
+        pagination: {
+          current_page: 1,
+          per_page: perPage,
+          total: 0,
+          last_page: 1,
+          from: 0,
+          to: 0,
+          has_more_pages: false,
+        },
+      }; // Kembalikan struktur dengan data kosong jika gagal
     }
   },
 

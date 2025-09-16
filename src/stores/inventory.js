@@ -56,6 +56,15 @@ const DUMMY_INVENTORY_DATA = [
 export const useInventoryStore = defineStore("inventory", () => {
   // --- STATE ---
   const inventoryItems = ref([]);
+  const pagination = ref({
+    current_page: 1,
+    per_page: 10,
+    total: 0,
+    last_page: 1,
+    from: 0,
+    to: 0,
+    has_more_pages: false,
+  });
 
   // --- GETTERS ---
   const lowStockItems = computed(() => {
@@ -82,23 +91,64 @@ export const useInventoryStore = defineStore("inventory", () => {
   // --- ACTIONS ---
 
   // ## INI ADALAH ACTION UTAMA DENGAN "SAKLAR" CERDAS ##
-  async function fetchAllItems() {
+  async function fetchAllItems(page = 1, perPage = 10) {
     if (import.meta.env.VITE_MOCK_API === "true") {
-      inventoryItems.value = DUMMY_INVENTORY_DATA;
+      // Simulate pagination for dummy data
+      const startIndex = (page - 1) * perPage;
+      const endIndex = startIndex + perPage;
+      const paginatedData = DUMMY_INVENTORY_DATA.slice(startIndex, endIndex);
+
+      inventoryItems.value = paginatedData;
+      pagination.value = {
+        current_page: page,
+        per_page: perPage,
+        total: DUMMY_INVENTORY_DATA.length,
+        last_page: Math.ceil(DUMMY_INVENTORY_DATA.length / perPage),
+        from: startIndex + 1,
+        to: Math.min(endIndex, DUMMY_INVENTORY_DATA.length),
+        has_more_pages: endIndex < DUMMY_INVENTORY_DATA.length,
+      };
       return; // Selesai
     }
 
     try {
-      const itemsFromApi = await inventoryService.getAll();
-      // Pastikan itemsFromApi adalah array sebelum di-assign
-      if (Array.isArray(itemsFromApi)) {
-        inventoryItems.value = itemsFromApi;
+      const response = await inventoryService.getAll(page, perPage);
+      // Pastikan response memiliki struktur yang benar
+      if (response && response.data && Array.isArray(response.data)) {
+        inventoryItems.value = response.data;
+        pagination.value = response.pagination || {
+          current_page: 1,
+          per_page: perPage,
+          total: 0,
+          last_page: 1,
+          from: 0,
+          to: 0,
+          has_more_pages: false,
+        };
       } else {
         inventoryItems.value = [];
+        pagination.value = {
+          current_page: 1,
+          per_page: perPage,
+          total: 0,
+          last_page: 1,
+          from: 0,
+          to: 0,
+          has_more_pages: false,
+        };
       }
     } catch (error) {
-      // Jika gagal, bisa diisi data kosong atau dummy sebagai fallback
+      // Jika gagal, bisa diisi data kosong sebagai fallback
       inventoryItems.value = [];
+      pagination.value = {
+        current_page: 1,
+        per_page: perPage,
+        total: 0,
+        last_page: 1,
+        from: 0,
+        to: 0,
+        has_more_pages: false,
+      };
     }
   }
 
@@ -127,6 +177,7 @@ export const useInventoryStore = defineStore("inventory", () => {
 
   return {
     inventoryItems,
+    pagination,
     nextItemCode,
     lowStockItems,
     fetchAllItems, // <-- Ganti setItems dengan ini
